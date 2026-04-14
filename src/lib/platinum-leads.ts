@@ -35,11 +35,31 @@ export type PlatinumLead = {
   jerseyTier: JerseyTier;
 };
 
+type NormalizedPlatinumLeadInput = {
+  id?: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  cardFirstName: string;
+  cardLastName: string;
+  billingCycle: BillingCycle;
+  jerseyTier: JerseyTier;
+  addressLine1: string;
+  postalCode: string;
+  city: string;
+  region: string;
+  country: string;
+  paymentMethod: PaymentMethod;
+  legalTermsAccepted: boolean;
+};
+
 function asText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function normalizeLeadInput(input: PlatinumLeadInput) {
+export function normalizeLeadInput(
+  input: PlatinumLeadInput,
+): NormalizedPlatinumLeadInput {
   const firstName = asText(input.firstName);
   const lastName = asText(input.lastName);
   const email = asText(input.email).toLowerCase();

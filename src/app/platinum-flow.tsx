@@ -72,11 +72,10 @@ const initialForm: LeadForm = {
   legalTermsAccepted: false,
 };
 
-const steps: Step[] = [
+const mainSteps: Step[] = [
   "profile",
   "plan",
   "card",
-  "card-name",
   "address",
   "delivery",
   "payment",
@@ -125,7 +124,7 @@ const stepLabels: Record<Step, string> = {
 };
 
 function stepIndex(step: Step) {
-  return steps.indexOf(step);
+  return mainSteps.indexOf(step);
 }
 
 function getDisplayName(form: LeadForm) {
@@ -191,11 +190,12 @@ function WelcomePackVisual() {
 }
 
 function Progress({ currentStep }: { currentStep: Step }) {
-  const current = stepIndex(currentStep);
+  const activeStep = currentStep === "card-name" ? "card" : currentStep;
+  const current = stepIndex(activeStep);
 
   return (
     <ol className="flow-progress" aria-label="Progreso del alta">
-      {steps.map((step, index) => (
+      {mainSteps.map((step, index) => (
         <li
           className={index <= current ? "is-active" : undefined}
           key={step}
@@ -283,13 +283,6 @@ export default function PlatinumFlow({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const selectedJersey = useMemo(
-    () =>
-      jerseyOptions.find((option) => option.jerseyTier === form.jerseyTier) ||
-      jerseyOptions[0],
-    [form.jerseyTier],
-  );
-
   const selectedPlan = useMemo(
     () =>
       planOptions.find((option) => option.billingCycle === form.billingCycle) ||
@@ -341,16 +334,22 @@ export default function PlatinumFlow({
   async function next() {
     const index = stepIndex(currentStep);
 
-    if (index < steps.length - 1) {
-      await persistDraft(steps[index + 1]);
+    if (index < mainSteps.length - 1) {
+      await persistDraft(mainSteps[index + 1]);
     }
   }
 
   function back() {
+    if (currentStep === "card-name") {
+      setCurrentStep("card");
+      setError("");
+      return;
+    }
+
     const index = stepIndex(currentStep);
 
     if (index > 0) {
-      setCurrentStep(steps[index - 1]);
+      setCurrentStep(mainSteps[index - 1]);
       setError("");
     }
   }
@@ -517,7 +516,7 @@ export default function PlatinumFlow({
             className="stacked-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void next();
+              void persistDraft("address");
             }}
           >
             <Field

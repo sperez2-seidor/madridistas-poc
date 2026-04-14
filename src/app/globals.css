@@ -41,6 +41,357 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.landing {
+  --landing-ink: #111111;
+  --landing-paper: #f7f7f2;
+  --landing-white: #ffffff;
+  --landing-line: #d8d2c2;
+  --landing-green: #0d4b42;
+  --landing-red: #c93636;
+  background: var(--landing-paper);
+  color: var(--landing-ink);
+}
+
+.hero {
+  position: relative;
+  min-height: 94svh;
+  overflow: clip;
+  color: var(--landing-white);
+  isolation: isolate;
+}
+
+.hero-image {
+  object-fit: cover;
+  filter: saturate(0.85) contrast(1.05);
+  transform: scale(1.02);
+  animation: image-settle 1400ms ease-out both;
+}
+
+.hero-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.38) 45%, rgb(0 0 0 / 0.12)),
+    linear-gradient(180deg, rgb(0 0 0 / 0.45), transparent 34%, rgb(0 0 0 / 0.52));
+}
+
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px clamp(18px, 5rem, 72px);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+}
+
+.brand-logo {
+  display: block;
+  width: 190px;
+  height: auto;
+}
+
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 1.5rem, 28px);
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.topnav a,
+.topnav span {
+  opacity: 0.88;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 22px;
+  max-width: 680px;
+  padding: clamp(74px, 7rem, 146px) clamp(18px, 5rem, 72px) 84px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.landing h1,
+.landing h2,
+.landing p {
+  margin: 0;
+}
+
+.landing h1 {
+  max-width: 12ch;
+  color: var(--landing-white);
+  font-size: clamp(3.6rem, 7rem, 8.7rem);
+  line-height: 0.92;
+  font-weight: 900;
+  text-wrap: balance;
+}
+
+.landing h2 {
+  color: inherit;
+  font-size: clamp(2rem, 4rem, 5rem);
+  line-height: 0.98;
+  font-weight: 900;
+  text-wrap: balance;
+}
+
+.hero-content p:not(.eyebrow),
+.pricing-copy p:not(.eyebrow),
+.pricing-placeholder p:not(.eyebrow) {
+  max-width: 560px;
+  font-size: clamp(1rem, 1.12rem, 1.22rem);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.primary-action {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 0.76);
+  border-radius: 8px;
+  padding: 0 22px;
+  background: var(--landing-white);
+  color: var(--landing-ink);
+  font-weight: 800;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+}
+
+.primary-action:hover {
+  transform: translateY(-2px);
+  background: var(--gold);
+  color: var(--landing-ink);
+}
+
+.primary-action:focus-visible,
+.topnav a:focus-visible,
+.payment-link-choice a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.intro {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(260px, 1fr);
+  gap: clamp(34px, 5rem, 110px);
+  padding: clamp(72px, 8rem, 128px) clamp(18px, 6rem, 96px);
+  background: var(--landing-white);
+}
+
+.benefit-list {
+  display: grid;
+  gap: 22px;
+  align-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: clamp(1.12rem, 1.6rem, 2rem);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.benefit-list li {
+  padding: 0 0 22px;
+  border-bottom: 1px solid var(--landing-line);
+}
+
+.benefit-list li::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 14px;
+  border-radius: 50%;
+  background: var(--landing-red);
+  vertical-align: 0.15em;
+}
+
+.pricing-section {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  gap: clamp(28px, 4rem, 76px);
+  padding: clamp(72px, 8rem, 132px) clamp(18px, 6rem, 96px);
+  background: var(--landing-ink);
+  color: var(--landing-white);
+}
+
+.pricing-copy {
+  position: sticky;
+  top: 42px;
+  display: grid;
+  gap: 20px;
+  align-self: start;
+}
+
+.pricing-shell {
+  min-height: 440px;
+  color: var(--landing-ink);
+}
+
+.plan-start-card {
+  display: grid;
+  gap: 32px;
+  border-radius: 8px;
+  padding: clamp(26px, 4rem, 56px);
+  background: var(--landing-white);
+}
+
+.plan-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--landing-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.plan-summary {
+  display: grid;
+  min-height: 220px;
+  gap: 16px;
+  align-content: center;
+  padding: clamp(22px, 3rem, 44px);
+}
+
+.plan-summary + .plan-summary {
+  border-left: 1px solid var(--landing-line);
+}
+
+.plan-summary span {
+  color: var(--landing-green);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.plan-summary strong {
+  font-size: clamp(2.05rem, 3.3rem, 3.7rem);
+  line-height: 1;
+  text-wrap: balance;
+}
+
+.plan-summary p,
+.plan-start-copy p {
+  max-width: 32ch;
+  color: rgb(17 17 17 / 0.72);
+  font-size: 1rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.plan-start-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+}
+
+.plan-start-action {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0 18px;
+  background: var(--landing-ink);
+  color: var(--landing-white);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: transform 180ms ease;
+}
+
+.plan-start-action:hover {
+  transform: translateY(-2px);
+}
+
+.payment-link-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.payment-link-choice a {
+  display: grid;
+  grid-template-rows: auto auto minmax(66px, 1fr) auto;
+  min-height: 260px;
+  gap: 18px;
+  border: 1px solid var(--landing-line);
+  border-radius: 8px;
+  padding: clamp(24px, 3rem, 44px);
+  background: var(--landing-white);
+  color: var(--landing-ink);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.payment-link-choice a:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold);
+}
+
+.payment-link-choice span {
+  color: var(--landing-green);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.payment-link-choice strong {
+  font-size: clamp(2.2rem, 4rem, 5rem);
+  line-height: 0.96;
+  text-wrap: balance;
+}
+
+.payment-link-choice p {
+  max-width: 28ch;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: rgb(17 17 17 / 0.72);
+  text-wrap: pretty;
+}
+
+.plan-cta {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  align-self: end;
+  border-radius: 8px;
+  padding: 0 16px;
+  background: var(--landing-ink);
+  color: var(--landing-white);
+  font-size: 0.84rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .platinum-app {
   display: grid;
   min-height: 100svh;
@@ -718,6 +1069,84 @@ select:focus-visible {
 }
 
 @media (max-width: 860px) {
+  .hero {
+    min-height: 92svh;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    gap: 18px;
+    padding: 28px 24px;
+  }
+
+  .brand-logo {
+    width: 172px;
+  }
+
+  .topnav {
+    gap: 12px;
+    font-size: 0.72rem;
+  }
+
+  .topnav a:first-child {
+    display: none;
+  }
+
+  .hero-content {
+    padding: 96px 24px 76px;
+  }
+
+  .landing h1 {
+    max-width: 8ch;
+    font-size: 3.72rem;
+  }
+
+  .landing h2 {
+    font-size: 3rem;
+  }
+
+  .intro,
+  .payment-link-choice,
+  .plan-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-summary + .plan-summary {
+    border-top: 1px solid var(--landing-line);
+    border-left: 0;
+  }
+
+  .plan-start-copy {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-start-action {
+    width: 100%;
+  }
+
+  .intro,
+  .pricing-section {
+    grid-template-columns: 1fr;
+    padding: 72px 24px;
+  }
+
+  .pricing-copy {
+    position: static;
+  }
+
+  .pricing-copy h2 {
+    font-size: 3.35rem;
+  }
+
+  .payment-link-choice a {
+    min-height: 0;
+    padding: 28px;
+  }
+
+  .payment-link-choice strong {
+    font-size: 3.3rem;
+  }
+
   .platinum-app {
     background-size: 150px 100%, 100% 100%;
   }
@@ -792,6 +1221,16 @@ select:focus-visible {
   .flow-footer {
     display: grid;
     padding: 20px;
+  }
+}
+
+@keyframes image-settle {
+  from {
+    transform: scale(1.07);
+  }
+
+  to {
+    transform: scale(1.02);
   }
 }
 

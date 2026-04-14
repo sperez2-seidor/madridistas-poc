@@ -1,0 +1,31 @@
+{
+  "name": "real-madrid-stripe-poc",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "db:start": "docker compose up -d db",
+    "db:migrate": "node scripts/migrate-db.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "stripe:setup": "node scripts/create-stripe-resources.mjs"
+  },
+  "dependencies": {
+    "next": "latest",
+    "pg": "^8.20.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "stripe": "^22.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pg": "^8.20.0",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "playwright": "^1.59.1",
+    "typescript": "latest"
+  }
+}

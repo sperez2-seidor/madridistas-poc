@@ -28,6 +28,17 @@ El precio anual `149,90 EUR/año` debe tratarse como dato de negocio a validar, 
 
 Incluido:
 
+- Alta previa de cliente anonimo con nombre, apellidos y email.
+- Guardado progresivo de datos en una base Postgres local compatible con Supabase.
+- Flujo visual de onboarding Platinum:
+  - configuracion de suscripcion mensual/anual;
+  - seleccion de camiseta fan o authentic;
+  - previsualizacion del carnet;
+  - edicion del nombre del carnet;
+  - direccion para Welcome Pack;
+  - informacion de entrega de camiseta;
+  - seleccion de metodo de pago preferido;
+  - redireccion a Stripe.
 - Crear producto `Madridista Platinum` en Stripe sandbox.
 - Crear dos precios recurrentes:
   - Mensual: `12,90 EUR / mes`
@@ -55,19 +66,28 @@ Fuera de alcance para esta POC:
 
 ## Enfoque low-code recomendado
 
-Usar Stripe Payment Links con precios recurrentes para demostrar el caso de uso con el mínimo desarrollo.
+Para el primer prototipo sin datos previos, Stripe Payment Links con precios recurrentes era suficiente.
+
+Con las nuevas pantallas, el cliente ya no empieza en Stripe: primero introduce identidad, personaliza carnet y aporta direccion. Por eso la PoC actual pasa a:
+
+- Next.js para la UI y las rutas API.
+- Postgres local en Docker para `platinum_leads`.
+- Stripe Checkout Sessions por API cuando existan `STRIPE_*_PRICE_ID`.
+- Payment Links como fallback para no bloquear la demo cuando solo existan URLs de Stripe.
 
 Ventajas:
 
-- No requiere backend para la primera prueba.
+- Mantiene el stack ligero.
+- Permite guardar el lead antes del pago.
+- Permite adjuntar `client_reference_id` y metadata a Checkout.
 - Stripe aloja la página de pago.
 - Stripe crea la suscripción y gestiona la recurrencia.
-- Permite probar mensual y anual con links separados.
 - Reduce riesgo de SCA/off-session frente a un flujo manual con PaymentIntents.
 
 Limitación:
 
-- Si se necesita control más fino de metadata, branding, identidad de usuario o integración con sistemas internos, conviene pasar de Payment Links a Checkout Sessions creadas por API.
+- Para la camiseta Authentic hacen falta precios y links adicionales si se quiere cobrar `16,90 EUR/mes` o `194,90 EUR/año`.
+- La base local es para PoC; en produccion debería migrarse a Supabase gestionado u otra base operada por el cliente.
 
 ## Landing y comparativa de suscripciones
 

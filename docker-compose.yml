@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: madridistas-platinum-db
+    environment:
+      POSTGRES_DB: madridistas
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - madridistas-platinum-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d madridistas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  madridistas-platinum-db:

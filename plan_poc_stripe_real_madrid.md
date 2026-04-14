@@ -69,6 +69,30 @@ Limitación:
 
 - Si se necesita control más fino de metadata, branding, identidad de usuario o integración con sistemas internos, conviene pasar de Payment Links a Checkout Sessions creadas por API.
 
+## Landing y comparativa de suscripciones
+
+Stripe tiene un componente low-code llamado `Pricing Table` que permite mostrar opciones de suscripcion y redirigir al usuario a Stripe Checkout. Para esta POC se puede usar para comparar:
+
+- Madridista Platinum mensual: `12,90 EUR/mes`
+- Madridista Platinum anual: `149,90 EUR/año`
+
+Uso recomendado para POC:
+
+- Crear el producto y los dos precios recurrentes.
+- Configurar una Pricing Table en Stripe con las dos opciones.
+- Embeber el snippet HTML de Stripe en una pagina de prueba.
+- Usar branding basico de Stripe: logo, color principal, bordes y texto de botones.
+
+Limitacion importante:
+
+- La `Pricing Table` acelera mucho la POC, pero no permite replicar pixel-perfect el aspecto de la landing de Madridistas. Para una landing con el mismo look & feel que Madridistas, la mejor opcion es construir una pagina propia con HTML/CSS o en el stack de Real Madrid, y usar Stripe solo para el paso de pago mediante Checkout Sessions o Payment Links.
+
+Recomendacion:
+
+- Para demo rapida: `Pricing Table`.
+- Para demo comercial que parezca Madridista: landing propia con dos CTAs y redireccion a Checkout/Payment Links.
+- Para produccion: landing propia + Checkout Sessions por API + webhooks.
+
 ## Plan de ejecución vía MCP de Stripe
 
 ### 1. Comprobar catálogo existente

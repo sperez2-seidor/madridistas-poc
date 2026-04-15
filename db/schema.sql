@@ -24,6 +24,11 @@ create table if not exists platinum_leads (
     check (status in ('draft', 'checkout_started', 'paid', 'cancelled')),
   stripe_checkout_session_id text,
   stripe_customer_id text,
+  stripe_subscription_id text,
+  stripe_subscription_status text,
+  stripe_price_id text,
+  stripe_product_id text,
+  stripe_latest_invoice_id text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -32,6 +37,13 @@ create table if not exists platinum_leads (
 create index if not exists platinum_leads_email_idx on platinum_leads (email);
 create index if not exists platinum_leads_status_idx on platinum_leads (status);
 create index if not exists platinum_leads_created_at_idx on platinum_leads (created_at desc);
+
+alter table platinum_leads
+  add column if not exists stripe_subscription_id text,
+  add column if not exists stripe_subscription_status text,
+  add column if not exists stripe_price_id text,
+  add column if not exists stripe_product_id text,
+  add column if not exists stripe_latest_invoice_id text;
 
 create or replace function set_updated_at()
 returns trigger as $$

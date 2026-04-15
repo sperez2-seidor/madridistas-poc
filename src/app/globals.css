@@ -505,6 +505,7 @@ a {
 
 .flow-panel.centered {
   display: grid;
+  align-content: start;
   justify-items: center;
   text-align: center;
 }
@@ -568,7 +569,9 @@ h2 {
 .stacked-form {
   display: grid;
   width: 100%;
+  grid-auto-rows: max-content;
   gap: 22px;
+  align-content: start;
 }
 
 .field {
@@ -955,6 +958,23 @@ h2 {
   gap: 20px;
 }
 
+.payment-element-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 0.82fr);
+  gap: clamp(32px, 5rem, 76px);
+  align-items: start;
+}
+
+.payment-element-shell {
+  display: grid;
+  min-height: 360px;
+  align-content: start;
+  border-radius: 8px;
+  padding: clamp(22px, 3rem, 40px);
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgb(23 27 45 / 0.09);
+}
+
 .summary-box,
 .summary-note {
   display: grid;
@@ -1059,6 +1079,138 @@ h2 {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 900;
+}
+
+.thank-you-page {
+  display: grid;
+  min-height: 100svh;
+  grid-template-rows: auto 1fr auto;
+  background:
+    linear-gradient(90deg, rgb(77 44 255 / 0.07) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(77 44 255 / 0.07) 1px, transparent 1px),
+    #ffffff;
+  background-size: 240px 100%, 100% 160px, 100% 100%;
+  color: var(--ink);
+}
+
+.thank-you-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 28px clamp(24px, 5rem, 88px);
+}
+
+.thank-you-brand {
+  display: inline-flex;
+  width: fit-content;
+}
+
+.thank-you-brand img {
+  width: 72px;
+  height: auto;
+  filter: invert(1);
+}
+
+.thank-you-hero {
+  display: grid;
+  width: min(100% - 48px, 760px);
+  justify-self: center;
+  align-content: center;
+  justify-items: center;
+  gap: 22px;
+  padding: clamp(48px, 8rem, 128px) 0;
+  text-align: center;
+}
+
+.thank-you-hero h1 {
+  max-width: 11ch;
+  font-size: clamp(3.2rem, 6.4rem, 7.8rem);
+  line-height: 0.92;
+  text-wrap: balance;
+}
+
+.thank-you-hero > p {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.thank-you-reference {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.thank-you-reference strong {
+  color: var(--ink);
+  font-size: 1.3rem;
+  letter-spacing: 0;
+}
+
+.thank-you-actions {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: 12px;
+}
+
+.thank-you-action {
+  width: auto;
+  min-width: 210px;
+}
+
+.thank-you-link {
+  margin: 0;
+}
+
+.thank-you-next {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.thank-you-next div {
+  display: grid;
+  min-height: 160px;
+  align-content: start;
+  gap: 12px;
+  padding: 28px clamp(22px, 4rem, 60px);
+}
+
+.thank-you-next div + div {
+  border-left: 1px solid var(--line);
+}
+
+.thank-you-next span {
+  color: var(--purple);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.thank-you-next h2,
+.thank-you-next p {
+  margin: 0;
+}
+
+.thank-you-next h2 {
+  font-size: 1.22rem;
+  line-height: 1.1;
+}
+
+.thank-you-next p {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 button:focus-visible,
@@ -1190,7 +1342,8 @@ select:focus-visible {
   }
 
   .configuration-grid,
-  .payment-grid {
+  .payment-grid,
+  .payment-element-grid {
     grid-template-columns: 1fr;
     gap: 32px;
   }
@@ -1221,6 +1374,38 @@ select:focus-visible {
   .flow-footer {
     display: grid;
     padding: 20px;
+  }
+
+  .thank-you-header {
+    padding: 22px 20px 12px;
+  }
+
+  .thank-you-hero {
+    width: min(100% - 40px, 560px);
+    padding: 54px 0 72px;
+  }
+
+  .thank-you-hero h1 {
+    font-size: 3.7rem;
+  }
+
+  .thank-you-actions,
+  .thank-you-next {
+    grid-template-columns: 1fr;
+  }
+
+  .thank-you-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .thank-you-action {
+    width: 100%;
+  }
+
+  .thank-you-next div + div {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 }
 

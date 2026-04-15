@@ -91,7 +91,7 @@ export async function POST(request: Request) {
             jersey_tier: normalized.jerseyTier,
           },
         },
-        success_url: `${origin}/?checkout=success&lead=${lead.id}`,
+        success_url: `${origin}/gracias?lead=${lead.id}`,
         cancel_url: `${origin}/?checkout=cancelled&lead=${lead.id}`,
       });
 

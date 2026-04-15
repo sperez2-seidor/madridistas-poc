@@ -5,6 +5,10 @@ declare global {
 }
 
 export function getPool() {
+  if (!process.env.DATABASE_URL && process.env.VERCEL === "1") {
+    throw new Error("DATABASE_URL no está configurada en Vercel.");
+  }
+
   if (!globalThis.platinumLeadPool) {
     globalThis.platinumLeadPool = new Pool({
       connectionString:

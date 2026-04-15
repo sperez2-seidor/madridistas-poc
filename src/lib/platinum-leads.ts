@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getPool } from "./db";
 
 const uuidPattern =
@@ -57,6 +58,10 @@ function asText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function canUseDatabase() {
+  return Boolean(process.env.DATABASE_URL) || process.env.VERCEL !== "1";
+}
+
 export function normalizeLeadInput(
   input: PlatinumLeadInput,
 ): NormalizedPlatinumLeadInput {
@@ -65,7 +70,7 @@ export function normalizeLeadInput(
   const email = asText(input.email).toLowerCase();
   const billingCycle = input.billingCycle === "yearly" ? "yearly" : "monthly";
   const jerseyTier = input.jerseyTier === "authentic" ? "authentic" : "fan";
-  const paymentMethod = input.paymentMethod === "card" ? "card" : "paypal";
+  const paymentMethod = input.paymentMethod === "paypal" ? "paypal" : "card";
   const id = input.id && uuidPattern.test(input.id) ? input.id : undefined;
 
   if (!firstName) {
@@ -101,6 +106,18 @@ export async function savePlatinumLead(
   stripeCheckoutSessionId?: string,
 ) {
   const lead = normalizeLeadInput(input);
+
+  if (!canUseDatabase()) {
+    return {
+      id: lead.id ?? randomUUID(),
+      email: lead.email,
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      billingCycle: lead.billingCycle,
+      jerseyTier: lead.jerseyTier,
+    };
+  }
+
   const pool = getPool();
 
   const result = await pool.query<PlatinumLead>(
@@ -201,4 +218,100 @@ export async function savePlatinumLead(
   );
 
   return result.rows[0];
+}
+
+export async function attachStripeSubscriptionToLead({
+  id,
+  stripeCustomerId,
+  stripeSubscriptionId,
+  stripeSubscriptionStatus,
+  stripePriceId,
+  stripeProductId,
+}: {
+  id: string;
+  stripeCustomerId: string;
+  stripeSubscriptionId: string;
+  stripeSubscriptionStatus?: string;
+  stripePriceId?: string;
+  stripeProductId?: string;
+}) {
+  if (!canUseDatabase()) {
+    return;
+  }
+
+  const pool = getPool();
+
+  await pool.query(
+    `
+      update platinum_leads
+      set
+        stripe_customer_id = $2,
+        stripe_subscription_id = $3,
+        stripe_subscription_status = $4,
+        stripe_price_id = $5,
+        stripe_product_id = $6,
+        updated_at = now()
+      where id = $1
+    `,
+    [
+      id,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripeSubscriptionStatus ?? null,
+      stripePriceId ?? null,
+      stripeProductId ?? null,
+    ],
+  );
+}
+
+export async function updateLeadStripeSubscriptionStatus({
+  leadId,
+  stripeSubscriptionId,
+  stripeCustomerId,
+  stripeSubscriptionStatus,
+  stripePriceId,
+  stripeProductId,
+  stripeLatestInvoiceId,
+  status,
+}: {
+  leadId?: string;
+  stripeSubscriptionId: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionStatus: string;
+  stripePriceId?: string;
+  stripeProductId?: string;
+  stripeLatestInvoiceId?: string;
+  status?: "checkout_started" | "paid" | "cancelled";
+}) {
+  if (!canUseDatabase()) {
+    return;
+  }
+
+  const pool = getPool();
+
+  await pool.query(
+    `
+      update platinum_leads
+      set
+        stripe_customer_id = coalesce($3, stripe_customer_id),
+        stripe_subscription_status = $4,
+        stripe_price_id = coalesce($5, stripe_price_id),
+        stripe_product_id = coalesce($6, stripe_product_id),
+        stripe_latest_invoice_id = coalesce($7, stripe_latest_invoice_id),
+        status = coalesce($8, status),
+        updated_at = now()
+      where stripe_subscription_id = $1
+        or ($2::uuid is not null and id = $2::uuid)
+    `,
+    [
+      stripeSubscriptionId,
+      leadId ?? null,
+      stripeCustomerId ?? null,
+      stripeSubscriptionStatus,
+      stripePriceId ?? null,
+      stripeProductId ?? null,
+      stripeLatestInvoiceId ?? null,
+      status ?? null,
+    ],
+  );
 }

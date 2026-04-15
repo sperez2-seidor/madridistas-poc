@@ -12,6 +12,8 @@
     "stripe:setup": "node scripts/create-stripe-resources.mjs"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.2.0",
+    "@stripe/stripe-js": "^9.2.0",
     "next": "latest",
     "pg": "^8.20.0",
     "react": "latest",

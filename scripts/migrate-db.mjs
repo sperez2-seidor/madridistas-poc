@@ -1,8 +1,23 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 
 const { Client } = pg;
+
+const localEnvPath = join(process.cwd(), ".env.local");
+if (existsSync(localEnvPath)) {
+  const lines = readFileSync(localEnvPath, "utf8").split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) {
+      continue;
+    }
+
+    const [key, ...valueParts] = trimmed.split("=");
+    process.env[key] ??= valueParts.join("=");
+  }
+}
 
 const connectionString =
   process.env.DATABASE_URL ??

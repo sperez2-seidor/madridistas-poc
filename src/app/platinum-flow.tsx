@@ -1,12 +1,8 @@
 "use client";
 
-import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
-import { loadStripe } from "@stripe/stripe-js";
 import Image from "next/image";
-import { FormEvent, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
 
 type BillingCycle = "monthly" | "yearly";
 type JerseyTier = "fan" | "authentic";
@@ -20,7 +16,7 @@ type Step =
   | "delivery"
   | "payment";
 
-type LeadForm = {
+export type LeadForm = {
   id?: string;
   firstName: string;
   lastName: string;
@@ -53,7 +49,7 @@ type JerseyOption = {
   yearly: string;
 };
 
-const initialForm: LeadForm = {
+const baseForm: LeadForm = {
   firstName: "",
   lastName: "",
   email: "",
@@ -69,6 +65,19 @@ const initialForm: LeadForm = {
   paymentMethod: "card",
   legalTermsAccepted: false,
 };
+
+function buildInitialForm(prefilledForm?: Partial<LeadForm>): LeadForm {
+  const merged = {
+    ...baseForm,
+    ...prefilledForm,
+  };
+
+  return {
+    ...merged,
+    cardFirstName: merged.cardFirstName || merged.firstName,
+    cardLastName: merged.cardLastName || merged.lastName,
+  };
+}
 
 const mainSteps: Step[] = [
   "profile",
@@ -126,6 +135,31 @@ function stepIndex(step: Step) {
   return mainSteps.indexOf(step);
 }
 
+function getPlanLabel(form: LeadForm) {
+  const tierLabel =
+    form.jerseyTier === "authentic"
+      ? "Madridista Platinum Authentic"
+      : "Madridista Platinum";
+
+  return tierLabel;
+}
+
+function getPlanAmount(form: LeadForm) {
+  if (form.billingCycle === "yearly") {
+    return form.jerseyTier === "authentic" ? "194,90 €/año" : "149,90 €/año";
+  }
+
+  return form.jerseyTier === "authentic" ? "16,90 €/mes" : "12,90 €/mes";
+}
+
+function getPlanHint(form: LeadForm) {
+  if (form.billingCycle === "yearly") {
+    return "Pago anual con las ventajas de toda la temporada.";
+  }
+
+  return "Pago mensual con renovación automática.";
+}
+
 function getDisplayName(form: LeadForm) {
   const firstName = form.cardFirstName || form.firstName || "Tu nombre";
   const lastName = form.cardLastName || form.lastName || "Apellidos";
@@ -167,6 +201,15 @@ function WelcomePackVisual() {
       <span className="pack-card" />
       <span className="pack-letter" />
       <span className="pack-shirt" />
+    </div>
+  );
+}
+
+function PaymentSummaryIcon() {
+  return (
+    <div className="payment-summary-icon" aria-hidden="true">
+      <span />
+      <span />
     </div>
   );
 }
@@ -255,34 +298,101 @@ function Field({
   );
 }
 
-function EmbeddedCheckoutPane({
+function PaymentMethodCard({
+  active,
+  description,
+  iconType,
+  label,
+  onSelect,
+  subtitle,
+}: {
+  active: boolean;
+  description: string;
+  iconType: "paypal" | "card";
+  label: string;
+  onSelect: () => void;
+  subtitle: string;
+}) {
+  return (
+    <button
+      className={active ? "payment-method-card is-selected" : "payment-method-card"}
+      onClick={onSelect}
+      type="button"
+    >
+      <span className="payment-method-label">{label}</span>
+      <strong>{subtitle}</strong>
+      <p>{description}</p>
+      <span className={`payment-method-icon payment-method-icon-${iconType}`}>
+        {iconType === "paypal" ? "P" : ""}
+      </span>
+    </button>
+  );
+}
+
+function PaymentStep({
   form,
   isSaving,
-  stripePromise,
-  checkoutClientSecret,
-  onPrepareCheckout,
   onLegalTermsChange,
-  onPaymentError,
+  onSelectMethod,
+  onPayCard,
+  onPayPaypal,
 }: {
   form: LeadForm;
   isSaving: boolean;
-  stripePromise: ReturnType<typeof loadStripe>;
-  checkoutClientSecret: string;
-  onPrepareCheckout: () => void;
   onLegalTermsChange: (accepted: boolean) => void;
-  onPaymentError: (message: string) => void;
+  onSelectMethod: (method: PaymentMethod) => void;
+  onPayCard: () => void;
+  onPayPaypal: () => void;
 }) {
+  const isPaypal = form.paymentMethod === "paypal";
+  const buttonLabel = isPaypal ? "Pagar con PayPal" : "Pagar con Stripe";
+
   return (
-    <div className="checkout-stage">
-      {!checkoutClientSecret ? (
-        <div className="checkout-preflight">
-          <p className="step-kicker">Stripe Checkout</p>
-          <h2>Completa el pago dentro de Madridistas</h2>
-          <p className="step-copy">
-            Stripe gestiona el cobro, la suscripción y los métodos de pago
-            compatibles para tu país.
-          </p>
-          <label className="checkbox-row">
+    <section className="flow-panel wide checkout-panel">
+      <p className="step-kicker">Madridista Platinum</p>
+      <h1 className="payment-heading">Elige tu método de pago preferido</h1>
+
+      <div className="payment-layout">
+        <div className="payment-methods" aria-label="Métodos de pago">
+          <PaymentMethodCard
+            active={isPaypal}
+            description="Simulación de PayPal para probar el flujo de redirección sin cobro real."
+            iconType="paypal"
+            label="PayPal"
+            onSelect={() => onSelectMethod("paypal")}
+            subtitle="Pago rápido"
+          />
+          <PaymentMethodCard
+            active={!isPaypal}
+            description="Cobro seguro con Stripe y redirección a su checkout oficial."
+            iconType="card"
+            label="Tarjeta bancaria"
+            onSelect={() => onSelectMethod("card")}
+            subtitle="Stripe"
+          />
+        </div>
+
+        <div className="payment-summary-column">
+          <div className="payment-summary-card">
+            <div>
+              <p className="payment-summary-title">{getPlanLabel(form)}</p>
+              <div className="payment-summary-row">
+                <span>{form.billingCycle === "monthly" ? "Suscripción mensual" : "Suscripción anual"}</span>
+                <strong>{getPlanAmount(form)}</strong>
+              </div>
+            </div>
+            <div className="payment-summary-row payment-summary-total">
+              <span>Importe total</span>
+              <strong>{getPlanAmount(form)}</strong>
+            </div>
+          </div>
+
+          <div className="payment-note-card">
+            <PaymentSummaryIcon />
+            <p>{getPlanHint(form)}</p>
+          </div>
+
+          <label className="checkbox-row payment-checkbox">
             <input
               checked={form.legalTermsAccepted}
               onChange={(event) => onLegalTermsChange(event.target.checked)}
@@ -294,67 +404,39 @@ function EmbeddedCheckoutPane({
               necesario para gestionar mi suscripción.
             </span>
           </label>
-          <button
-            className="flow-action"
-            disabled={isSaving || !form.legalTermsAccepted || !stripePromise}
-            onClick={() => {
-              if (!form.legalTermsAccepted) {
-                onPaymentError(
-                  "Acepta las condiciones de venta para continuar al pago.",
-                );
-                return;
-              }
 
-              onPrepareCheckout();
-            }}
+          <button
+            className="flow-action payment-action"
+            disabled={isSaving || !form.legalTermsAccepted}
+            onClick={isPaypal ? onPayPaypal : onPayCard}
             type="button"
           >
-            {isSaving ? "Preparando checkout" : "Abrir pago seguro"}
+            {isSaving ? "Procesando" : buttonLabel}
           </button>
-          <p className="checkout-note">
-            Al finalizar volverás a una página de confirmación con tu
-            referencia.
-          </p>
         </div>
-      ) : (
-        <div className="embedded-checkout-shell">
-          <EmbeddedCheckoutProvider
-            key={checkoutClientSecret}
-            options={{
-              clientSecret: checkoutClientSecret,
-            }}
-            stripe={stripePromise}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }
 
 export default function PlatinumFlow({
-  publishableKey,
+  prefilledForm,
 }: {
-  publishableKey: string;
+  prefilledForm?: Partial<LeadForm>;
 }) {
-  const [form, setForm] = useState<LeadForm>(initialForm);
+  const router = useRouter();
+  const [form, setForm] = useState<LeadForm>(() =>
+    buildInitialForm(prefilledForm),
+  );
   const [currentStep, setCurrentStep] = useState<Step>("profile");
   const [isSaving, setIsSaving] = useState(false);
-  const [checkoutClientSecret, setCheckoutClientSecret] = useState("");
   const [error, setError] = useState("");
-  const stripePromise = useMemo(
-    () => (publishableKey ? loadStripe(publishableKey) : null),
-    [publishableKey],
-  );
 
   function updateField(name: keyof LeadForm, value: string) {
     setForm((current) => ({ ...current, [name]: value }));
-    setCheckoutClientSecret("");
   }
 
   function updateProfile(name: keyof LeadForm, value: string) {
-    setCheckoutClientSecret("");
     setForm((current) => {
       const next = { ...current, [name]: value };
 
@@ -421,32 +503,68 @@ export default function PlatinumFlow({
   }
 
   async function preparePaymentStep() {
-    if (checkoutClientSecret) {
-      setCurrentStep("payment");
-      setError("");
-      return;
-    }
-
     setIsSaving(true);
     setError("");
 
     try {
       const payload = await postJson<{
         id: string;
-        clientSecret: string;
-      }>("/api/platinum-subscription", { ...form, paymentMethod: "card" });
+        url: string;
+      }>("/api/platinum-checkout", { ...form, paymentMethod: "card" });
       setForm((current) => ({
         ...current,
         id: payload.id,
         paymentMethod: "card",
       }));
-      setCheckoutClientSecret(payload.clientSecret);
-      setCurrentStep("payment");
+      window.location.assign(payload.url);
     } catch (paymentError) {
       setError(
         paymentError instanceof Error
           ? paymentError.message
           : "No se pudo preparar el pago.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function preparePaypalStep() {
+    setIsSaving(true);
+    setError("");
+
+    try {
+      const payload = await postJson<{ id: string }>("/api/platinum-leads", {
+        ...form,
+        paymentMethod: "paypal",
+        legalTermsAccepted: true,
+      });
+
+      const searchParams = new URLSearchParams({
+        lead: payload.id,
+        paymentMethod: "paypal",
+        redirect_status: "succeeded",
+      });
+
+      if (form.email) {
+        searchParams.set("email", form.email);
+      }
+
+      if (form.firstName) {
+        searchParams.set("firstName", form.firstName);
+      }
+
+      setForm((current) => ({
+        ...current,
+        id: payload.id,
+        paymentMethod: "paypal",
+        legalTermsAccepted: true,
+      }));
+      router.push(`/checkout/paypal?${searchParams.toString()}`);
+    } catch (paypalError) {
+      setError(
+        paypalError instanceof Error
+          ? paypalError.message
+          : "No se pudo preparar PayPal.",
       );
     } finally {
       setIsSaving(false);
@@ -704,39 +822,33 @@ export default function PlatinumFlow({
           <button
             className="flow-action"
             disabled={isSaving}
-            onClick={() => void preparePaymentStep()}
+            onClick={() => {
+              setCurrentStep("payment");
+              setError("");
+            }}
             type="button"
           >
-            {isSaving ? "Preparando pago" : "Continuar"}
+            Continuar
           </button>
         </section>
       ) : null}
 
       {currentStep === "payment" ? (
-        <section className="flow-panel wide checkout-panel">
-          <h1>Completa tu suscripción</h1>
-          {!publishableKey || !stripePromise ? (
-            <p className="warning-copy">
-              Configura la clave publicable de Stripe para mostrar el formulario
-              de pago.
-            </p>
-          ) : (
-            <EmbeddedCheckoutPane
-              checkoutClientSecret={checkoutClientSecret}
-              form={form}
-              isSaving={isSaving}
-              onLegalTermsChange={(accepted) =>
-                setForm((current) => ({
-                  ...current,
-                  legalTermsAccepted: accepted,
-                }))
-              }
-              onPaymentError={setError}
-              onPrepareCheckout={() => void preparePaymentStep()}
-              stripePromise={stripePromise}
-            />
-          )}
-        </section>
+        <PaymentStep
+          form={form}
+          isSaving={isSaving}
+          onLegalTermsChange={(accepted) =>
+            setForm((current) => ({
+              ...current,
+              legalTermsAccepted: accepted,
+            }))
+          }
+          onSelectMethod={(method) =>
+            setForm((current) => ({ ...current, paymentMethod: method }))
+          }
+          onPayCard={() => void preparePaymentStep()}
+          onPayPaypal={() => void preparePaypalStep()}
+        />
       ) : null}
 
       {error ? (

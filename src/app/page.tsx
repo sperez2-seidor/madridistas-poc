@@ -57,7 +57,7 @@ export default function Home() {
             Recibe la camiseta de la temporada, tu pack de bienvenida y todas
             las ventajas Premium.
           </p>
-          <a className="primary-action" href="/alta">
+          <a className="primary-action" href="/checkout">
             Únete ahora
           </a>
         </div>
@@ -85,7 +85,10 @@ export default function Home() {
           </p>
         </div>
         <div className="pricing-shell">
-          <article className="plan-start-card" aria-label="Alta Madridista Platinum">
+          <article
+            className="plan-start-card"
+            aria-label="Alta Madridista Platinum"
+          >
             <div className="plan-comparison">
               {plans.map((plan) => (
                 <div className="plan-summary" key={plan.cadence}>
@@ -100,7 +103,7 @@ export default function Home() {
                 El plan, la camiseta y los datos de envío se configuran en el
                 siguiente paso.
               </p>
-              <a className="plan-start-action" href="/alta">
+              <a className="plan-start-action" href="/checkout">
                 Configurar alta Platinum
               </a>
             </div>

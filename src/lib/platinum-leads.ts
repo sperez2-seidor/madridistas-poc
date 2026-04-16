@@ -268,6 +268,7 @@ export async function updateLeadStripeSubscriptionStatus({
   leadId,
   stripeSubscriptionId,
   stripeCustomerId,
+  stripeCheckoutSessionId,
   stripeSubscriptionStatus,
   stripePriceId,
   stripeProductId,
@@ -277,6 +278,7 @@ export async function updateLeadStripeSubscriptionStatus({
   leadId?: string;
   stripeSubscriptionId: string;
   stripeCustomerId?: string;
+  stripeCheckoutSessionId?: string;
   stripeSubscriptionStatus: string;
   stripePriceId?: string;
   stripeProductId?: string;
@@ -294,11 +296,12 @@ export async function updateLeadStripeSubscriptionStatus({
       update platinum_leads
       set
         stripe_customer_id = coalesce($3, stripe_customer_id),
-        stripe_subscription_status = $4,
-        stripe_price_id = coalesce($5, stripe_price_id),
-        stripe_product_id = coalesce($6, stripe_product_id),
-        stripe_latest_invoice_id = coalesce($7, stripe_latest_invoice_id),
-        status = coalesce($8, status),
+        stripe_checkout_session_id = coalesce($4, stripe_checkout_session_id),
+        stripe_subscription_status = $5,
+        stripe_price_id = coalesce($6, stripe_price_id),
+        stripe_product_id = coalesce($7, stripe_product_id),
+        stripe_latest_invoice_id = coalesce($8, stripe_latest_invoice_id),
+        status = coalesce($9, status),
         updated_at = now()
       where stripe_subscription_id = $1
         or ($2::uuid is not null and id = $2::uuid)
@@ -307,11 +310,40 @@ export async function updateLeadStripeSubscriptionStatus({
       stripeSubscriptionId,
       leadId ?? null,
       stripeCustomerId ?? null,
+      stripeCheckoutSessionId ?? null,
       stripeSubscriptionStatus,
       stripePriceId ?? null,
       stripeProductId ?? null,
       stripeLatestInvoiceId ?? null,
       status ?? null,
     ],
+  );
+}
+
+export async function updateLeadCheckoutStatus({
+  leadId,
+  stripeCheckoutSessionId,
+  status,
+}: {
+  leadId: string;
+  stripeCheckoutSessionId?: string;
+  status?: "checkout_started" | "paid" | "cancelled";
+}) {
+  if (!canUseDatabase()) {
+    return;
+  }
+
+  const pool = getPool();
+
+  await pool.query(
+    `
+      update platinum_leads
+      set
+        stripe_checkout_session_id = coalesce($2, stripe_checkout_session_id),
+        status = coalesce($3, status),
+        updated_at = now()
+      where id = $1::uuid
+    `,
+    [leadId, stripeCheckoutSessionId ?? null, status ?? null],
   );
 }

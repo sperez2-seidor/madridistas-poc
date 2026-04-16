@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
+  EmbeddedCheckout,
+  EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import Image from "next/image";
@@ -107,7 +105,8 @@ const jerseyOptions: JerseyOption[] = [
   {
     jerseyTier: "authentic",
     title: "Suscripción + Camiseta Authentic*",
-    description: "La camiseta idéntica a la que usan los jugadores en cada partido.",
+    description:
+      "La camiseta idéntica a la que usan los jugadores en cada partido.",
     monthly: "16,90 €/mes",
     yearly: "194,90 €/año",
   },
@@ -131,18 +130,6 @@ function getDisplayName(form: LeadForm) {
   const firstName = form.cardFirstName || form.firstName || "Tu nombre";
   const lastName = form.cardLastName || form.lastName || "Apellidos";
   return `${firstName} ${lastName}`.trim();
-}
-
-function getPrice(form: LeadForm) {
-  const selected = jerseyOptions.find(
-    (option) => option.jerseyTier === form.jerseyTier,
-  );
-
-  if (!selected) {
-    return "";
-  }
-
-  return form.billingCycle === "monthly" ? selected.monthly : selected.yearly;
 }
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -268,120 +255,81 @@ function Field({
   );
 }
 
-function SubscriptionPaymentForm({
+function EmbeddedCheckoutPane({
   form,
-  selectedPlan,
-  subscriptionId,
   isSaving,
+  stripePromise,
+  checkoutClientSecret,
+  onPrepareCheckout,
   onLegalTermsChange,
   onPaymentError,
 }: {
   form: LeadForm;
-  selectedPlan: PlanOption;
-  subscriptionId?: string;
   isSaving: boolean;
+  stripePromise: ReturnType<typeof loadStripe>;
+  checkoutClientSecret: string;
+  onPrepareCheckout: () => void;
   onLegalTermsChange: (accepted: boolean) => void;
   onPaymentError: (message: string) => void;
 }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  async function handlePaymentSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onPaymentError("");
-
-    if (!form.legalTermsAccepted) {
-      onPaymentError(
-        "Acepta las condiciones de venta para completar la suscripción.",
-      );
-      return;
-    }
-
-    if (!stripe || !elements) {
-      onPaymentError("Stripe todavía está preparando el formulario de pago.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    const returnUrl = new URL("/gracias", window.location.origin);
-
-    if (form.id) {
-      returnUrl.searchParams.set("lead", form.id);
-    }
-
-    if (subscriptionId) {
-      returnUrl.searchParams.set("subscription", subscriptionId);
-    }
-
-    const result = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: returnUrl.toString(),
-      },
-      redirect: "if_required",
-    });
-
-    if (result.error) {
-      onPaymentError(
-        result.error.message || "No se pudo confirmar el pago con Stripe.",
-      );
-      setIsSubmitting(false);
-      return;
-    }
-
-    window.location.assign(returnUrl.toString());
-  }
-
   return (
-    <form className="payment-element-grid" onSubmit={handlePaymentSubmit}>
-      <div className="payment-element-shell">
-        <PaymentElement
-          options={{
-            layout: "tabs",
-          }}
-        />
-      </div>
-      <div className="payment-summary">
-        <div className="summary-box">
-          <h2>Madridista Platinum</h2>
-          <p>
-            {selectedPlan.label}
-            <span>{getPrice(form)}</span>
+    <div className="checkout-stage">
+      {!checkoutClientSecret ? (
+        <div className="checkout-preflight">
+          <p className="step-kicker">Stripe Checkout</p>
+          <h2>Completa el pago dentro de Madridistas</h2>
+          <p className="step-copy">
+            Stripe gestiona el cobro, la suscripción y los métodos de pago
+            compatibles para tu país.
           </p>
-          <p className="summary-total">
-            Importe total
-            <strong>{getPrice(form)}</strong>
+          <label className="checkbox-row">
+            <input
+              checked={form.legalTermsAccepted}
+              onChange={(event) => onLegalTermsChange(event.target.checked)}
+              required
+              type="checkbox"
+            />
+            <span>
+              Acepto las condiciones de venta y el tratamiento de datos
+              necesario para gestionar mi suscripción.
+            </span>
+          </label>
+          <button
+            className="flow-action"
+            disabled={isSaving || !form.legalTermsAccepted || !stripePromise}
+            onClick={() => {
+              if (!form.legalTermsAccepted) {
+                onPaymentError(
+                  "Acepta las condiciones de venta para continuar al pago.",
+                );
+                return;
+              }
+
+              onPrepareCheckout();
+            }}
+            type="button"
+          >
+            {isSaving ? "Preparando checkout" : "Abrir pago seguro"}
+          </button>
+          <p className="checkout-note">
+            Al finalizar volverás a una página de confirmación con tu
+            referencia.
           </p>
         </div>
-        <div className="summary-note">
-          <ShirtVisual authentic={form.jerseyTier === "authentic"} />
-          <p>
-            Podrás personalizarla para garantizar el stock en los próximos
-            pasos.
-          </p>
+      ) : (
+        <div className="embedded-checkout-shell">
+          <EmbeddedCheckoutProvider
+            key={checkoutClientSecret}
+            options={{
+              clientSecret: checkoutClientSecret,
+            }}
+            stripe={stripePromise}
+          >
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
         </div>
-        <label className="checkbox-row">
-          <input
-            checked={form.legalTermsAccepted}
-            onChange={(event) => onLegalTermsChange(event.target.checked)}
-            required
-            type="checkbox"
-          />
-          <span>
-            Acepto las condiciones de venta y el tratamiento de datos necesario
-            para gestionar mi suscripción.
-          </span>
-        </label>
-        <button
-          className="flow-action"
-          disabled={isSaving || isSubmitting || !stripe || !elements}
-          type="submit"
-        >
-          {isSubmitting ? "Confirmando pago" : "Pagar"}
-        </button>
-      </div>
-    </form>
+      )}
+    </div>
   );
 }
 
@@ -393,30 +341,20 @@ export default function PlatinumFlow({
   const [form, setForm] = useState<LeadForm>(initialForm);
   const [currentStep, setCurrentStep] = useState<Step>("profile");
   const [isSaving, setIsSaving] = useState(false);
-  const [paymentClientSecret, setPaymentClientSecret] = useState("");
-  const [paymentSubscriptionId, setPaymentSubscriptionId] = useState("");
+  const [checkoutClientSecret, setCheckoutClientSecret] = useState("");
   const [error, setError] = useState("");
   const stripePromise = useMemo(
     () => (publishableKey ? loadStripe(publishableKey) : null),
     [publishableKey],
   );
 
-  const selectedPlan = useMemo(
-    () =>
-      planOptions.find((option) => option.billingCycle === form.billingCycle) ||
-      planOptions[0],
-    [form.billingCycle],
-  );
-
   function updateField(name: keyof LeadForm, value: string) {
     setForm((current) => ({ ...current, [name]: value }));
-    setPaymentClientSecret("");
-    setPaymentSubscriptionId("");
+    setCheckoutClientSecret("");
   }
 
   function updateProfile(name: keyof LeadForm, value: string) {
-    setPaymentClientSecret("");
-    setPaymentSubscriptionId("");
+    setCheckoutClientSecret("");
     setForm((current) => {
       const next = { ...current, [name]: value };
 
@@ -437,7 +375,10 @@ export default function PlatinumFlow({
     setError("");
 
     try {
-      const payload = await postJson<{ id: string }>("/api/platinum-leads", form);
+      const payload = await postJson<{ id: string }>(
+        "/api/platinum-leads",
+        form,
+      );
       setForm((current) => ({ ...current, id: payload.id }));
       setCurrentStep(nextStep);
     } catch (draftError) {
@@ -480,7 +421,7 @@ export default function PlatinumFlow({
   }
 
   async function preparePaymentStep() {
-    if (paymentClientSecret) {
+    if (checkoutClientSecret) {
       setCurrentStep("payment");
       setError("");
       return;
@@ -493,18 +434,13 @@ export default function PlatinumFlow({
       const payload = await postJson<{
         id: string;
         clientSecret: string;
-        subscriptionId: string;
-      }>(
-        "/api/platinum-subscription",
-        { ...form, paymentMethod: "card" },
-      );
+      }>("/api/platinum-subscription", { ...form, paymentMethod: "card" });
       setForm((current) => ({
         ...current,
         id: payload.id,
         paymentMethod: "card",
       }));
-      setPaymentClientSecret(payload.clientSecret);
-      setPaymentSubscriptionId(payload.subscriptionId);
+      setCheckoutClientSecret(payload.clientSecret);
       setCurrentStep("payment");
     } catch (paymentError) {
       setError(
@@ -638,7 +574,11 @@ export default function PlatinumFlow({
           >
             Cambiar el nombre de mi carnet
           </button>
-          <button className="flow-action" onClick={() => void next()} type="button">
+          <button
+            className="flow-action"
+            onClick={() => void next()}
+            type="button"
+          >
             Genial. Sigamos
           </button>
         </section>
@@ -748,15 +688,18 @@ export default function PlatinumFlow({
           <ShirtVisual authentic={form.jerseyTier === "authentic"} />
           <ol className="delivery-months" aria-label="Meses de suscripción">
             {Array.from({ length: 12 }, (_, index) => (
-              <li className={index === 0 || index === 11 ? "is-active" : ""} key={index}>
+              <li
+                className={index === 0 || index === 11 ? "is-active" : ""}
+                key={index}
+              >
                 {index + 1}
               </li>
             ))}
           </ol>
           <p className="legal-copy">
-            Podrás consultar el progreso de tu suscripción desde tu área privada.
-            El envío de la camiseta en el mes 12 está sujeto al pago de las
-            cuotas correspondientes y a la disponibilidad de temporada.
+            Podrás consultar el progreso de tu suscripción desde tu área
+            privada. El envío de la camiseta en el mes 12 está sujeto al pago de
+            las cuotas correspondientes y a la disponibilidad de temporada.
           </p>
           <button
             className="flow-action"
@@ -770,54 +713,37 @@ export default function PlatinumFlow({
       ) : null}
 
       {currentStep === "payment" ? (
-        <section className="flow-panel wide">
+        <section className="flow-panel wide checkout-panel">
           <h1>Completa tu suscripción</h1>
           {!publishableKey || !stripePromise ? (
             <p className="warning-copy">
               Configura la clave publicable de Stripe para mostrar el formulario
               de pago.
             </p>
-          ) : paymentClientSecret ? (
-            <Elements
-              key={paymentClientSecret}
-              stripe={stripePromise}
-              options={{
-                clientSecret: paymentClientSecret,
-                locale: "es",
-                appearance: {
-                  theme: "stripe",
-                  variables: {
-                    borderRadius: "8px",
-                    colorPrimary: "#4d2cff",
-                    colorText: "#171b2d",
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                  },
-                },
-              }}
-            >
-              <SubscriptionPaymentForm
-                form={form}
-                isSaving={isSaving}
-                onLegalTermsChange={(accepted) =>
-                  setForm((current) => ({
-                    ...current,
-                    legalTermsAccepted: accepted,
-                  }))
-                }
-                onPaymentError={setError}
-                selectedPlan={selectedPlan}
-                subscriptionId={paymentSubscriptionId}
-              />
-            </Elements>
           ) : (
-            <p className="warning-copy">
-              Preparando el formulario seguro de Stripe.
-            </p>
+            <EmbeddedCheckoutPane
+              checkoutClientSecret={checkoutClientSecret}
+              form={form}
+              isSaving={isSaving}
+              onLegalTermsChange={(accepted) =>
+                setForm((current) => ({
+                  ...current,
+                  legalTermsAccepted: accepted,
+                }))
+              }
+              onPaymentError={setError}
+              onPrepareCheckout={() => void preparePaymentStep()}
+              stripePromise={stripePromise}
+            />
           )}
         </section>
       ) : null}
 
-      {error ? <p className="flow-error" role="alert">{error}</p> : null}
+      {error ? (
+        <p className="flow-error" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <footer className="flow-footer">
         <span>Real Madrid © 2026. Todos los derechos reservados.</span>

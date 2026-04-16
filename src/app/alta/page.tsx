@@ -1,9 +1,5 @@
-import PlatinumFlow from "../platinum-flow";
+import { redirect } from "next/navigation";
 
 export default function AltaPage() {
-  return (
-    <PlatinumFlow
-      publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""}
-    />
-  );
+  redirect("/checkout");
 }

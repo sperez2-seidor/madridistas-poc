@@ -77,8 +77,18 @@ a {
   inset: 0;
   z-index: 1;
   background:
-    linear-gradient(90deg, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.38) 45%, rgb(0 0 0 / 0.12)),
-    linear-gradient(180deg, rgb(0 0 0 / 0.45), transparent 34%, rgb(0 0 0 / 0.52));
+    linear-gradient(
+      90deg,
+      rgb(0 0 0 / 0.78),
+      rgb(0 0 0 / 0.38) 45%,
+      rgb(0 0 0 / 0.12)
+    ),
+    linear-gradient(
+      180deg,
+      rgb(0 0 0 / 0.45),
+      transparent 34%,
+      rgb(0 0 0 / 0.52)
+    );
 }
 
 .topbar {
@@ -400,7 +410,9 @@ a {
     linear-gradient(90deg, rgb(77 44 255 / 0.05) 1px, transparent 1px),
     linear-gradient(180deg, rgb(185 152 82 / 0.14), transparent 7px),
     var(--paper);
-  background-size: 240px 100%, 100% 100%;
+  background-size:
+    240px 100%,
+    100% 100%;
 }
 
 .flow-header {
@@ -514,6 +526,10 @@ a {
 .flow-panel.narrow > h1 {
   margin: 0 0 34px;
   text-align: center;
+}
+
+.checkout-panel {
+  width: min(100% - 48px, 1240px);
 }
 
 .step-kicker,
@@ -735,8 +751,18 @@ h2 {
   justify-self: center;
   border-radius: 26px 26px 8px 8px;
   background:
-    linear-gradient(110deg, transparent 0 18%, rgb(23 27 45 / 0.06) 18% 22%, transparent 22%),
-    linear-gradient(250deg, transparent 0 18%, rgb(23 27 45 / 0.06) 18% 22%, transparent 22%),
+    linear-gradient(
+      110deg,
+      transparent 0 18%,
+      rgb(23 27 45 / 0.06) 18% 22%,
+      transparent 22%
+    ),
+    linear-gradient(
+      250deg,
+      transparent 0 18%,
+      rgb(23 27 45 / 0.06) 18% 22%,
+      transparent 22%
+    ),
     #f8f8f6;
   box-shadow: inset 0 0 0 1px rgb(23 27 45 / 0.12);
 }
@@ -816,7 +842,12 @@ h2 {
 
 .shirt-visual.authentic {
   background:
-    linear-gradient(90deg, transparent 0 46%, rgb(185 152 82 / 0.28) 46% 54%, transparent 54%),
+    linear-gradient(
+      90deg,
+      transparent 0 46%,
+      rgb(185 152 82 / 0.28) 46% 54%,
+      transparent 54%
+    ),
     #f9f9f7;
 }
 
@@ -840,7 +871,11 @@ h2 {
   padding: 34px 44px;
   background:
     radial-gradient(circle at 82% 10%, rgb(23 27 45 / 0.16), transparent 38%),
-    repeating-radial-gradient(circle at 90% 20%, rgb(23 27 45 / 0.14) 0 1px, transparent 1px 8px),
+    repeating-radial-gradient(
+      circle at 90% 20%,
+      rgb(23 27 45 / 0.14) 0 1px,
+      transparent 1px 8px
+    ),
     #d9dbe1;
   box-shadow: 0 28px 56px rgb(77 44 255 / 0.22);
   text-align: left;
@@ -953,9 +988,12 @@ h2 {
   font-size: 1.5rem;
 }
 
-.payment-summary {
+.checkout-stage {
   display: grid;
-  gap: 20px;
+  grid-template-columns: minmax(320px, 1fr);
+  gap: clamp(24px, 3rem, 40px);
+  align-items: start;
+  justify-items: center;
 }
 
 .payment-element-grid {
@@ -965,6 +1003,7 @@ h2 {
   align-items: start;
 }
 
+.checkout-preflight,
 .payment-element-shell {
   display: grid;
   min-height: 360px;
@@ -975,60 +1014,29 @@ h2 {
   box-shadow: 0 18px 48px rgb(23 27 45 / 0.09);
 }
 
-.summary-box,
-.summary-note {
+.embedded-checkout-shell {
   display: grid;
-  gap: 18px;
-  border-radius: 8px;
-  padding: 24px;
-  background: var(--surface);
+  width: min(100%, 1000px);
+  min-height: 560px;
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
 }
 
-.summary-box h2 {
-  font-size: 1rem;
-  letter-spacing: 0;
+.embedded-checkout-shell iframe {
+  min-height: 560px;
 }
 
-.summary-box p {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  color: var(--ink);
-  font-size: 0.92rem;
-  font-weight: 800;
-}
-
-.summary-total {
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
-}
-
-.summary-total strong {
-  font-size: 1.2rem;
-}
-
-.summary-note {
-  grid-template-columns: 80px 1fr;
-  align-items: center;
-}
-
-.summary-note .shirt-visual {
-  width: 50px;
-  height: 58px;
-  transform: scale(0.72);
-  transform-origin: center;
-}
-
-.summary-note .shirt-badge,
-.summary-note .shirt-sponsor,
-.summary-note .shirt-crest {
-  display: none;
-}
-
-.summary-note p {
+.checkout-note {
+  margin: 0;
   color: var(--muted);
-  font-weight: 900;
-  line-height: 1.35;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.checkout-note.compact {
+  font-size: 0.84rem;
 }
 
 .checkbox-row {
@@ -1087,9 +1095,11 @@ h2 {
   grid-template-rows: auto 1fr auto;
   background:
     linear-gradient(90deg, rgb(77 44 255 / 0.07) 1px, transparent 1px),
-    linear-gradient(180deg, rgb(77 44 255 / 0.07) 1px, transparent 1px),
-    #ffffff;
-  background-size: 240px 100%, 100% 160px, 100% 100%;
+    linear-gradient(180deg, rgb(77 44 255 / 0.07) 1px, transparent 1px), #ffffff;
+  background-size:
+    240px 100%,
+    100% 160px,
+    100% 100%;
   color: var(--ink);
 }
 
@@ -1153,6 +1163,12 @@ h2 {
   color: var(--ink);
   font-size: 1.3rem;
   letter-spacing: 0;
+}
+
+.thank-you-email {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.96rem;
 }
 
 .thank-you-actions {
@@ -1300,7 +1316,9 @@ select:focus-visible {
   }
 
   .platinum-app {
-    background-size: 150px 100%, 100% 100%;
+    background-size:
+      150px 100%,
+      100% 100%;
   }
 
   .flow-header {
@@ -1348,6 +1366,15 @@ select:focus-visible {
     gap: 32px;
   }
 
+  .checkout-stage {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .checkout-panel {
+    width: min(100% - 40px, 100%);
+  }
+
   .configuration-grid .selection-column,
   .payment-grid .selection-column {
     padding-right: 0;
@@ -1367,8 +1394,8 @@ select:focus-visible {
     justify-content: center;
   }
 
-  .summary-note {
-    grid-template-columns: 60px 1fr;
+  .embedded-checkout-shell {
+    min-height: 0;
   }
 
   .flow-footer {

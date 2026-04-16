@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import {
-  attachStripeSubscriptionToLead,
   normalizeLeadInput,
   savePlatinumLead,
   type BillingCycle,
@@ -30,29 +29,6 @@ function getPriceId(billingCycle: BillingCycle, jerseyTier: JerseyTier) {
   return priceIds[key];
 }
 
-function getInvoiceClientSecret(subscription: Stripe.Subscription) {
-  const latestInvoice = subscription.latest_invoice as
-    | {
-        confirmation_secret?: {
-          client_secret?: string | null;
-        } | null;
-      }
-    | null
-    | undefined;
-
-  return latestInvoice?.confirmation_secret?.client_secret;
-}
-
-function getSubscriptionPriceIds(subscription: Stripe.Subscription) {
-  const price = subscription.items.data[0]?.price;
-  const product = price?.product;
-
-  return {
-    priceId: price?.id,
-    productId: typeof product === "string" ? product : product?.id,
-  };
-}
-
 function getCountryCode(country: string) {
   const countries: Record<string, string> = {
     alemania: "DE",
@@ -65,6 +41,10 @@ function getCountryCode(country: string) {
   };
 
   return countries[country.trim().toLowerCase()] || undefined;
+}
+
+function shouldEnableAutomaticTax() {
+  return process.env.STRIPE_AUTOMATIC_TAX_ENABLED !== "false";
 }
 
 export async function POST(request: Request) {
@@ -124,55 +104,63 @@ export async function POST(request: Request) {
       },
     });
 
-    const subscription = await stripe.subscriptions.create({
+    const origin =
+      request.headers.get("origin") ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "http://localhost:3000";
+
+    const session = await stripe.checkout.sessions.create({
+      ui_mode: "embedded_page",
+      mode: "subscription",
       customer: customer.id,
-      items: [
+      line_items: [
         {
           price: priceId,
+          quantity: 1,
         },
       ],
-      billing_mode: {
-        type: "flexible",
-      },
-      payment_behavior: "default_incomplete",
-      payment_settings: {
-        payment_method_types: ["card"],
-        save_default_payment_method: "on_subscription",
-      },
+      client_reference_id: lead.id,
       metadata: {
         lead_id: lead.id,
         billing_cycle: normalized.billingCycle,
         jersey_tier: normalized.jerseyTier,
         source: "madridista-platinum-poc",
       },
-      expand: ["latest_invoice.confirmation_secret"],
+      subscription_data: {
+        metadata: {
+          lead_id: lead.id,
+          billing_cycle: normalized.billingCycle,
+          jersey_tier: normalized.jerseyTier,
+          source: "madridista-platinum-poc",
+        },
+      },
+      return_url: `${origin}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+      ...(shouldEnableAutomaticTax()
+        ? {
+            automatic_tax: {
+              enabled: true,
+            },
+          }
+        : {}),
     });
 
-    const clientSecret = getInvoiceClientSecret(subscription);
-    const { priceId: stripePriceId, productId: stripeProductId } =
-      getSubscriptionPriceIds(subscription);
-
-    if (!clientSecret) {
+    if (!session.client_secret) {
       return NextResponse.json(
-        { error: "Stripe no devolvió el client secret de la suscripción." },
+        { error: "Stripe no devolvió el client secret de Checkout." },
         { status: 400 },
       );
     }
 
-    await attachStripeSubscriptionToLead({
-      id: lead.id,
-      stripeCustomerId: customer.id,
-      stripeSubscriptionId: subscription.id,
-      stripeSubscriptionStatus: subscription.status,
-      stripePriceId,
-      stripeProductId,
-    });
+    await savePlatinumLead(
+      { ...payload, id: lead.id, paymentMethod: "card" },
+      "checkout_started",
+      session.id,
+    );
 
     return NextResponse.json({
       id: lead.id,
-      clientSecret,
-      subscriptionId: subscription.id,
-      customerId: customer.id,
+      clientSecret: session.client_secret,
+      checkoutSessionId: session.id,
     });
   } catch (error) {
     return NextResponse.json(

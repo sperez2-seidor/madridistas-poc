@@ -1,9 +1,16 @@
+import Stripe from "stripe";
 import Image from "next/image";
 import Link from "next/link";
 
 type ThankYouPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+const stripe =
+  process.env.STRIPE_SECRET_KEY &&
+  process.env.STRIPE_SECRET_KEY.startsWith("sk_")
+    ? new Stripe(process.env.STRIPE_SECRET_KEY)
+    : undefined;
 
 function getParam(
   params: Record<string, string | string[] | undefined>,
@@ -21,14 +28,55 @@ function getShortReference(value?: string) {
   return value.slice(-8).toUpperCase();
 }
 
+function getSubscriptionId(value: unknown) {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    return typeof id === "string" ? id : undefined;
+  }
+
+  return undefined;
+}
+
 export default async function ThankYouPage({
   searchParams,
 }: ThankYouPageProps) {
   const params = searchParams ? await searchParams : {};
   const lead = getParam(params, "lead");
   const subscription = getParam(params, "subscription");
+  const sessionId = getParam(params, "session_id");
   const redirectStatus = getParam(params, "redirect_status");
-  const needsReview = redirectStatus === "failed";
+
+  let checkoutSession: Stripe.Checkout.Session | null | undefined;
+
+  if (stripe && sessionId) {
+    try {
+      checkoutSession = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ["subscription"],
+      });
+    } catch {
+      checkoutSession = null;
+    }
+  }
+
+  const sessionSubscriptionId = getSubscriptionId(
+    checkoutSession?.subscription,
+  );
+  const referenceSource =
+    sessionSubscriptionId || subscription || lead || sessionId;
+  const isConfirmed =
+    checkoutSession?.status === "complete" ||
+    redirectStatus === "succeeded" ||
+    redirectStatus === "paid";
+  const needsReview =
+    redirectStatus === "failed" || checkoutSession?.status === "open";
 
   return (
     <main className="thank-you-page">
@@ -54,23 +102,32 @@ export default async function ThankYouPage({
         <h1>
           {needsReview
             ? "No hemos podido confirmar el pago."
-            : "Tu alta está en marcha."}
+            : isConfirmed
+              ? "Tu suscripción está confirmada."
+              : "Tu alta está en marcha."}
         </h1>
         <p>
           {needsReview
             ? "Revisa el método de pago para completar tu suscripción Platinum."
-            : "Te enviaremos la confirmación y los próximos pasos al email indicado durante el alta."}
+            : isConfirmed
+              ? "Te enviaremos la confirmación y los próximos pasos al email indicado durante el alta."
+              : "Estamos revisando la confirmación de Stripe y te mandaremos el detalle al email del alta."}
         </p>
         <div className="thank-you-reference">
           <span>Referencia</span>
-          <strong>{getShortReference(subscription || lead)}</strong>
+          <strong>{getShortReference(referenceSource)}</strong>
         </div>
+        {checkoutSession?.customer_details?.email ? (
+          <p className="thank-you-email">
+            Email: {checkoutSession.customer_details.email}
+          </p>
+        ) : null}
         <div className="thank-you-actions">
           <Link className="flow-action thank-you-action" href="/">
             Volver al inicio
           </Link>
           {needsReview ? (
-            <Link className="text-button thank-you-link" href="/alta">
+            <Link className="text-button thank-you-link" href="/checkout">
               Intentarlo de nuevo
             </Link>
           ) : null}

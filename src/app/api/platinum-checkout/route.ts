@@ -52,6 +52,10 @@ function addEmailToPaymentLink(url: string, email: string) {
   return paymentUrl.toString();
 }
 
+function shouldEnableAutomaticTax() {
+  return process.env.STRIPE_AUTOMATIC_TAX_ENABLED !== "false";
+}
+
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as PlatinumLeadInput;
@@ -91,8 +95,15 @@ export async function POST(request: Request) {
             jersey_tier: normalized.jerseyTier,
           },
         },
-        success_url: `${origin}/gracias?lead=${lead.id}`,
+        success_url: `${origin}/gracias?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/?checkout=cancelled&lead=${lead.id}`,
+        ...(shouldEnableAutomaticTax()
+          ? {
+              automatic_tax: {
+                enabled: true,
+              },
+            }
+          : {}),
       });
 
       if (!session.url) {

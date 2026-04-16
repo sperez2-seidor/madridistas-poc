@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { updateLeadStripeSubscriptionStatus } from "@/lib/platinum-leads";
+import {
+  updateLeadCheckoutStatus,
+  updateLeadStripeSubscriptionStatus,
+} from "@/lib/platinum-leads";
 
 const stripe =
   process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_")
@@ -82,6 +85,32 @@ async function syncSubscription(subscription: Stripe.Subscription) {
   });
 }
 
+async function syncCheckoutSession(session: Stripe.Checkout.Session) {
+  const subscriptionId = getSubscriptionId(session.subscription);
+
+  if (!subscriptionId) {
+    return;
+  }
+
+  const subscription = await retrieveSubscription(subscriptionId);
+  const customerId = getSubscriptionId(session.customer) || getSubscriptionId(subscription.customer);
+  const price = subscription.items.data[0]?.price;
+  const latestInvoiceId = getSubscriptionId(subscription.latest_invoice);
+  const leadId = session.client_reference_id || session.metadata?.lead_id;
+
+  await updateLeadStripeSubscriptionStatus({
+    leadId,
+    stripeSubscriptionId: subscription.id,
+    stripeCustomerId: customerId,
+    stripeCheckoutSessionId: session.id,
+    stripeSubscriptionStatus: subscription.status,
+    stripePriceId: price?.id,
+    stripeProductId: getProductId(price),
+    stripeLatestInvoiceId: latestInvoiceId,
+    status: getLeadStatus(subscription.status),
+  });
+}
+
 async function retrieveSubscription(subscriptionId: string) {
   if (!stripe) {
     throw new Error("Stripe no está configurado.");
@@ -144,6 +173,26 @@ export async function POST(request: Request) {
     event.type === "customer.subscription.deleted"
   ) {
     await syncSubscription(event.data.object as Stripe.Subscription);
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === "checkout.session.completed") {
+    await syncCheckoutSession(event.data.object as Stripe.Checkout.Session);
+    return NextResponse.json({ received: true });
+  }
+
+  if (event.type === "checkout.session.expired") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const leadId = session.client_reference_id || session.metadata?.lead_id;
+
+    if (leadId) {
+      await updateLeadCheckoutStatus({
+        leadId,
+        stripeCheckoutSessionId: session.id,
+        status: "cancelled",
+      });
+    }
+
     return NextResponse.json({ received: true });
   }
 

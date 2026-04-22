@@ -7,6 +7,7 @@ import {
   type JerseyTier,
   type PlatinumLeadInput,
 } from "@/lib/platinum-leads";
+import { getPricing } from "@/lib/platinum-pricing";
 
 const stripe =
   process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_")
@@ -15,18 +16,6 @@ const stripe =
 
 function getSelectionKey(billingCycle: BillingCycle, jerseyTier: JerseyTier) {
   return `${billingCycle}_${jerseyTier}` as const;
-}
-
-function getPriceId(billingCycle: BillingCycle, jerseyTier: JerseyTier) {
-  const key = getSelectionKey(billingCycle, jerseyTier);
-  const priceIds: Record<ReturnType<typeof getSelectionKey>, string | undefined> = {
-    monthly_fan: process.env.STRIPE_MONTHLY_PRICE_ID,
-    yearly_fan: process.env.STRIPE_YEARLY_PRICE_ID,
-    monthly_authentic: process.env.STRIPE_MONTHLY_AUTHENTIC_PRICE_ID,
-    yearly_authentic: process.env.STRIPE_YEARLY_AUTHENTIC_PRICE_ID,
-  };
-
-  return priceIds[key];
 }
 
 function getFallbackPaymentLink(
@@ -52,58 +41,60 @@ function addEmailToPaymentLink(url: string, email: string) {
   return paymentUrl.toString();
 }
 
-function shouldEnableAutomaticTax() {
-  return process.env.STRIPE_AUTOMATIC_TAX_ENABLED !== "false";
-}
-
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as PlatinumLeadInput;
     const normalized = normalizeLeadInput(payload);
     const lead = await savePlatinumLead(payload, "checkout_started");
-    const priceId = getPriceId(normalized.billingCycle, normalized.jerseyTier);
+    const pricing = getPricing(normalized.billingCycle, normalized.jerseyTier);
     const fallbackLink = getFallbackPaymentLink(
       normalized.billingCycle,
       normalized.jerseyTier,
     );
 
-    if (stripe && priceId) {
+    if (stripe && pricing) {
       const origin =
         request.headers.get("origin") ||
         process.env.NEXT_PUBLIC_SITE_URL ||
         "http://localhost:3000";
+
       const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
+        mode: "payment",
         customer_email: normalized.email,
         client_reference_id: lead.id,
         line_items: [
           {
-            price: priceId,
+            price_data: {
+              currency: pricing.currency,
+              product_data: {
+                name: pricing.label,
+              },
+              unit_amount: pricing.amountCents,
+            },
             quantity: 1,
           },
         ],
+        payment_intent_data: {
+          setup_future_usage: "off_session",
+          metadata: {
+            lead_id: lead.id,
+            billing_cycle: normalized.billingCycle,
+            jersey_tier: normalized.jerseyTier,
+            kind: "initial",
+            source: "madridista-platinum-poc",
+          },
+        },
         metadata: {
           lead_id: lead.id,
           billing_cycle: normalized.billingCycle,
           jersey_tier: normalized.jerseyTier,
           payment_method_preference: normalized.paymentMethod,
-        },
-        subscription_data: {
-          metadata: {
-            lead_id: lead.id,
-            billing_cycle: normalized.billingCycle,
-            jersey_tier: normalized.jerseyTier,
-          },
+          amount_cents: String(pricing.amountCents),
+          currency: pricing.currency,
+          source: "madridista-platinum-poc",
         },
         success_url: `${origin}/gracias?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/?checkout=cancelled&lead=${lead.id}`,
-        ...(shouldEnableAutomaticTax()
-          ? {
-              automatic_tax: {
-                enabled: true,
-              },
-            }
-          : {}),
       });
 
       if (!session.url) {
@@ -129,7 +120,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "No hay Price ID ni Payment Link configurado para la combinación seleccionada.",
+          "No hay configuración de precios ni Payment Link para la combinación seleccionada.",
       },
       { status: 400 },
     );

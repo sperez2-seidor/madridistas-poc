@@ -1788,3 +1788,199 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+.backoffice {
+  min-height: 100vh;
+  padding: 3rem clamp(1.5rem, 6vw, 4rem);
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.backoffice-header {
+  max-width: 72rem;
+  margin: 0 auto 2.5rem;
+}
+
+.backoffice-header h1 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  margin: 0 0 0.5rem;
+}
+
+.backoffice-header p {
+  color: #475569;
+  max-width: 48rem;
+}
+
+.backoffice-empty {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 3rem;
+  background: #fff;
+  border-radius: 1rem;
+  border: 1px dashed #cbd5f5;
+  text-align: center;
+  color: #475569;
+}
+
+.backoffice-empty code {
+  background: #eef2ff;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+
+.backoffice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(32rem, 1fr));
+  gap: 1.5rem;
+  max-width: 96rem;
+  margin: 0 auto;
+}
+
+.backoffice-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.75rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06),
+    0 8px 24px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.backoffice-card h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem;
+}
+
+.backoffice-card header p {
+  margin: 0 0 1rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.backoffice-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.backoffice-card dt {
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  margin-bottom: 0.25rem;
+}
+
+.backoffice-card dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.backoffice-card code {
+  font-size: 0.75rem;
+  color: #334155;
+}
+
+.charge-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.charge-action .flow-action {
+  align-self: flex-start;
+}
+
+.charge-feedback {
+  font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  margin: 0;
+}
+
+.charge-feedback-ok {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.charge-feedback-ko {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.backoffice-history h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+  color: #334155;
+}
+
+.backoffice-muted {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.backoffice-history table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.backoffice-history th,
+.backoffice-history td {
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.backoffice-history th {
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+
+.backoffice-history small {
+  display: block;
+  color: #b91c1c;
+  margin-top: 0.15rem;
+}
+
+.charge-status {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.charge-status-succeeded {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.charge-status-processing,
+.charge-status-pending {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.charge-status-failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.charge-status-requires_action {
+  background: #fef3c7;
+  color: #92400e;
+}
+

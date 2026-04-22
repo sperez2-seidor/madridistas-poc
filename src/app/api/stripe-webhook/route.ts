@@ -1,123 +1,112 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import {
+  attachStripePaymentToLead,
   updateLeadCheckoutStatus,
-  updateLeadStripeSubscriptionStatus,
 } from "@/lib/platinum-leads";
+import { upsertChargeByPaymentIntent } from "@/lib/platinum-charges";
 
 const stripe =
   process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_")
     ? new Stripe(process.env.STRIPE_SECRET_KEY)
     : undefined;
 
-function getSubscriptionId(value: unknown) {
-  if (!value) {
-    return undefined;
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
+function toId(value: unknown) {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
   if (typeof value === "object" && "id" in value) {
     const id = (value as { id?: unknown }).id;
     return typeof id === "string" ? id : undefined;
   }
-
   return undefined;
 }
 
-function getInvoiceSubscriptionId(invoice: Stripe.Invoice) {
-  const invoiceWithLegacySubscription = invoice as Stripe.Invoice & {
-    subscription?: unknown;
-    parent?: {
-      subscription_details?: {
-        subscription?: unknown;
-      } | null;
-    } | null;
-  };
-
-  return (
-    getSubscriptionId(invoiceWithLegacySubscription.subscription) ||
-    getSubscriptionId(
-      invoiceWithLegacySubscription.parent?.subscription_details?.subscription,
-    )
-  );
-}
-
-function getProductId(price?: Stripe.Price) {
-  if (!price) {
-    return undefined;
-  }
-
-  return typeof price.product === "string" ? price.product : price.product.id;
-}
-
-function getLeadStatus(subscriptionStatus: Stripe.Subscription.Status) {
-  if (subscriptionStatus === "active" || subscriptionStatus === "trialing") {
-    return "paid";
-  }
-
-  if (
-    subscriptionStatus === "canceled" ||
-    subscriptionStatus === "incomplete_expired" ||
-    subscriptionStatus === "unpaid"
-  ) {
-    return "cancelled";
-  }
-
-  return "checkout_started";
-}
-
-async function syncSubscription(subscription: Stripe.Subscription) {
-  const price = subscription.items.data[0]?.price;
-  const latestInvoiceId = getSubscriptionId(subscription.latest_invoice);
-
-  await updateLeadStripeSubscriptionStatus({
-    leadId: subscription.metadata.lead_id,
-    stripeSubscriptionId: subscription.id,
-    stripeCustomerId: getSubscriptionId(subscription.customer),
-    stripeSubscriptionStatus: subscription.status,
-    stripePriceId: price?.id,
-    stripeProductId: getProductId(price),
-    stripeLatestInvoiceId: latestInvoiceId,
-    status: getLeadStatus(subscription.status),
-  });
-}
-
-async function syncCheckoutSession(session: Stripe.Checkout.Session) {
-  const subscriptionId = getSubscriptionId(session.subscription);
-
-  if (!subscriptionId) {
-    return;
-  }
-
-  const subscription = await retrieveSubscription(subscriptionId);
-  const customerId = getSubscriptionId(session.customer) || getSubscriptionId(subscription.customer);
-  const price = subscription.items.data[0]?.price;
-  const latestInvoiceId = getSubscriptionId(subscription.latest_invoice);
-  const leadId = session.client_reference_id || session.metadata?.lead_id;
-
-  await updateLeadStripeSubscriptionStatus({
-    leadId,
-    stripeSubscriptionId: subscription.id,
-    stripeCustomerId: customerId,
-    stripeCheckoutSessionId: session.id,
-    stripeSubscriptionStatus: subscription.status,
-    stripePriceId: price?.id,
-    stripeProductId: getProductId(price),
-    stripeLatestInvoiceId: latestInvoiceId,
-    status: getLeadStatus(subscription.status),
-  });
-}
-
-async function retrieveSubscription(subscriptionId: string) {
+async function retrievePaymentIntent(paymentIntentId: string) {
   if (!stripe) {
     throw new Error("Stripe no está configurado.");
   }
 
-  return stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ["items.data.price.product", "latest_invoice"],
+  return stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method", "latest_charge"],
+  });
+}
+
+async function syncCheckoutSession(session: Stripe.Checkout.Session) {
+  const leadId = session.client_reference_id || session.metadata?.lead_id;
+  if (!leadId) return;
+
+  const paymentIntentId = toId(session.payment_intent);
+  if (!paymentIntentId) {
+    await updateLeadCheckoutStatus({
+      leadId,
+      stripeCheckoutSessionId: session.id,
+      status: session.payment_status === "paid" ? "paid" : "checkout_started",
+    });
+    return;
+  }
+
+  const paymentIntent = await retrievePaymentIntent(paymentIntentId);
+  const customerId = toId(session.customer) || toId(paymentIntent.customer);
+  const paymentMethodId = toId(paymentIntent.payment_method);
+  const chargeId = toId(paymentIntent.latest_charge);
+  const amountCents = paymentIntent.amount_received || paymentIntent.amount;
+  const currency = paymentIntent.currency;
+
+  await attachStripePaymentToLead({
+    leadId,
+    stripeCustomerId: customerId,
+    stripePaymentMethodId: paymentMethodId,
+    stripeCheckoutSessionId: session.id,
+    amountCents,
+    currency,
+    status: paymentIntent.status === "succeeded" ? "paid" : "checkout_started",
+  });
+
+  await upsertChargeByPaymentIntent({
+    leadId,
+    stripePaymentIntentId: paymentIntent.id,
+    stripeChargeId: chargeId ?? null,
+    kind: "initial",
+    amountCents,
+    currency,
+    status: mapPaymentIntentStatus(paymentIntent.status),
+    failureCode: paymentIntent.last_payment_error?.code ?? null,
+    failureMessage: paymentIntent.last_payment_error?.message ?? null,
+  });
+}
+
+function mapPaymentIntentStatus(
+  status: Stripe.PaymentIntent.Status,
+): "succeeded" | "failed" | "requires_action" | "processing" | "pending" {
+  switch (status) {
+    case "succeeded":
+      return "succeeded";
+    case "processing":
+      return "processing";
+    case "canceled":
+      return "failed";
+    case "requires_action":
+    case "requires_confirmation":
+    case "requires_payment_method":
+      return "requires_action";
+    default:
+      return "pending";
+  }
+}
+
+async function syncPaymentIntent(paymentIntent: Stripe.PaymentIntent) {
+  const leadId = paymentIntent.metadata?.lead_id;
+  const chargeId = toId(paymentIntent.latest_charge);
+
+  await upsertChargeByPaymentIntent({
+    leadId: leadId ?? null,
+    stripePaymentIntentId: paymentIntent.id,
+    stripeChargeId: chargeId ?? null,
+    amountCents: paymentIntent.amount_received || paymentIntent.amount,
+    currency: paymentIntent.currency,
+    status: mapPaymentIntentStatus(paymentIntent.status),
+    failureCode: paymentIntent.last_payment_error?.code ?? null,
+    failureMessage: paymentIntent.last_payment_error?.message ?? null,
   });
 }
 
@@ -167,15 +156,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (
-    event.type === "customer.subscription.created" ||
-    event.type === "customer.subscription.updated" ||
-    event.type === "customer.subscription.deleted"
-  ) {
-    await syncSubscription(event.data.object as Stripe.Subscription);
-    return NextResponse.json({ received: true });
-  }
-
   if (event.type === "checkout.session.completed") {
     await syncCheckoutSession(event.data.object as Stripe.Checkout.Session);
     return NextResponse.json({ received: true });
@@ -196,14 +176,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true });
   }
 
-  if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
-    const invoice = event.data.object as Stripe.Invoice;
-    const subscriptionId = getInvoiceSubscriptionId(invoice);
-
-    if (subscriptionId) {
-      await syncSubscription(await retrieveSubscription(subscriptionId));
-    }
-
+  if (
+    event.type === "payment_intent.succeeded" ||
+    event.type === "payment_intent.payment_failed" ||
+    event.type === "payment_intent.processing" ||
+    event.type === "payment_intent.canceled"
+  ) {
+    await syncPaymentIntent(event.data.object as Stripe.PaymentIntent);
     return NextResponse.json({ received: true });
   }
 

@@ -28,20 +28,13 @@ function getShortReference(value?: string) {
   return value.slice(-8).toUpperCase();
 }
 
-function getSubscriptionId(value: unknown) {
-  if (!value) {
-    return undefined;
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
+function toId(value: unknown) {
+  if (!value) return undefined;
+  if (typeof value === "string") return value;
   if (typeof value === "object" && "id" in value) {
     const id = (value as { id?: unknown }).id;
     return typeof id === "string" ? id : undefined;
   }
-
   return undefined;
 }
 
@@ -50,7 +43,6 @@ export default async function ThankYouPage({
 }: ThankYouPageProps) {
   const params = searchParams ? await searchParams : {};
   const lead = getParam(params, "lead");
-  const subscription = getParam(params, "subscription");
   const sessionId = getParam(params, "session_id");
   const redirectStatus = getParam(params, "redirect_status");
 
@@ -59,24 +51,25 @@ export default async function ThankYouPage({
   if (stripe && sessionId) {
     try {
       checkoutSession = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ["subscription"],
+        expand: ["payment_intent"],
       });
     } catch {
       checkoutSession = null;
     }
   }
 
-  const sessionSubscriptionId = getSubscriptionId(
-    checkoutSession?.subscription,
-  );
+  const paymentIntentId = toId(checkoutSession?.payment_intent);
   const referenceSource =
-    sessionSubscriptionId || subscription || lead || sessionId;
+    paymentIntentId || lead || sessionId;
   const isConfirmed =
+    checkoutSession?.payment_status === "paid" ||
     checkoutSession?.status === "complete" ||
     redirectStatus === "succeeded" ||
     redirectStatus === "paid";
   const needsReview =
-    redirectStatus === "failed" || checkoutSession?.status === "open";
+    redirectStatus === "failed" ||
+    checkoutSession?.status === "open" ||
+    checkoutSession?.payment_status === "unpaid";
 
   return (
     <main className="thank-you-page">
@@ -103,14 +96,14 @@ export default async function ThankYouPage({
           {needsReview
             ? "No hemos podido confirmar el pago."
             : isConfirmed
-              ? "Tu suscripción está confirmada."
+              ? "Tu primer pago está confirmado."
               : "Tu alta está en marcha."}
         </h1>
         <p>
           {needsReview
-            ? "Revisa el método de pago para completar tu suscripción Platinum."
+            ? "Revisa el método de pago para completar tu alta Platinum."
             : isConfirmed
-              ? "Te enviaremos la confirmación y los próximos pasos al email indicado durante el alta."
+              ? "Hemos guardado tu tarjeta para los próximos cobros. Te enviaremos la confirmación al email del alta."
               : "Estamos revisando la confirmación de Stripe y te mandaremos el detalle al email del alta."}
         </p>
         <div className="thank-you-reference">

@@ -36,6 +36,22 @@ export type PlatinumLead = {
   jerseyTier: JerseyTier;
 };
 
+export type PlatinumLeadRecord = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  billingCycle: BillingCycle;
+  jerseyTier: JerseyTier;
+  status: "draft" | "checkout_started" | "paid" | "cancelled";
+  stripeCustomerId: string | null;
+  stripePaymentMethodId: string | null;
+  stripeCheckoutSessionId: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  createdAt: string;
+};
+
 type NormalizedPlatinumLeadInput = {
   id?: string;
   firstName: string;
@@ -220,69 +236,21 @@ export async function savePlatinumLead(
   return result.rows[0];
 }
 
-export async function attachStripeSubscriptionToLead({
-  id,
-  stripeCustomerId,
-  stripeSubscriptionId,
-  stripeSubscriptionStatus,
-  stripePriceId,
-  stripeProductId,
-}: {
-  id: string;
-  stripeCustomerId: string;
-  stripeSubscriptionId: string;
-  stripeSubscriptionStatus?: string;
-  stripePriceId?: string;
-  stripeProductId?: string;
-}) {
-  if (!canUseDatabase()) {
-    return;
-  }
-
-  const pool = getPool();
-
-  await pool.query(
-    `
-      update platinum_leads
-      set
-        stripe_customer_id = $2,
-        stripe_subscription_id = $3,
-        stripe_subscription_status = $4,
-        stripe_price_id = $5,
-        stripe_product_id = $6,
-        updated_at = now()
-      where id = $1
-    `,
-    [
-      id,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripeSubscriptionStatus ?? null,
-      stripePriceId ?? null,
-      stripeProductId ?? null,
-    ],
-  );
-}
-
-export async function updateLeadStripeSubscriptionStatus({
+export async function attachStripePaymentToLead({
   leadId,
-  stripeSubscriptionId,
   stripeCustomerId,
+  stripePaymentMethodId,
   stripeCheckoutSessionId,
-  stripeSubscriptionStatus,
-  stripePriceId,
-  stripeProductId,
-  stripeLatestInvoiceId,
+  amountCents,
+  currency,
   status,
 }: {
-  leadId?: string;
-  stripeSubscriptionId: string;
+  leadId: string;
   stripeCustomerId?: string;
+  stripePaymentMethodId?: string;
   stripeCheckoutSessionId?: string;
-  stripeSubscriptionStatus: string;
-  stripePriceId?: string;
-  stripeProductId?: string;
-  stripeLatestInvoiceId?: string;
+  amountCents?: number;
+  currency?: string;
   status?: "checkout_started" | "paid" | "cancelled";
 }) {
   if (!canUseDatabase()) {
@@ -295,29 +263,92 @@ export async function updateLeadStripeSubscriptionStatus({
     `
       update platinum_leads
       set
-        stripe_customer_id = coalesce($3, stripe_customer_id),
+        stripe_customer_id = coalesce($2, stripe_customer_id),
+        stripe_payment_method_id = coalesce($3, stripe_payment_method_id),
         stripe_checkout_session_id = coalesce($4, stripe_checkout_session_id),
-        stripe_subscription_status = $5,
-        stripe_price_id = coalesce($6, stripe_price_id),
-        stripe_product_id = coalesce($7, stripe_product_id),
-        stripe_latest_invoice_id = coalesce($8, stripe_latest_invoice_id),
-        status = coalesce($9, status),
+        amount_cents = coalesce($5, amount_cents),
+        currency = coalesce($6, currency),
+        status = coalesce($7, status),
         updated_at = now()
-      where stripe_subscription_id = $1
-        or ($2::uuid is not null and id = $2::uuid)
+      where id = $1::uuid
     `,
     [
-      stripeSubscriptionId,
-      leadId ?? null,
+      leadId,
       stripeCustomerId ?? null,
+      stripePaymentMethodId ?? null,
       stripeCheckoutSessionId ?? null,
-      stripeSubscriptionStatus,
-      stripePriceId ?? null,
-      stripeProductId ?? null,
-      stripeLatestInvoiceId ?? null,
+      amountCents ?? null,
+      currency ?? null,
       status ?? null,
     ],
   );
+}
+
+export async function getLeadById(leadId: string) {
+  if (!canUseDatabase()) {
+    return null;
+  }
+
+  const pool = getPool();
+
+  const result = await pool.query<PlatinumLeadRecord>(
+    `
+      select
+        id,
+        email,
+        first_name as "firstName",
+        last_name as "lastName",
+        billing_cycle as "billingCycle",
+        jersey_tier as "jerseyTier",
+        status,
+        stripe_customer_id as "stripeCustomerId",
+        stripe_payment_method_id as "stripePaymentMethodId",
+        stripe_checkout_session_id as "stripeCheckoutSessionId",
+        amount_cents as "amountCents",
+        currency,
+        created_at as "createdAt"
+      from platinum_leads
+      where id = $1::uuid
+      limit 1
+    `,
+    [leadId],
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function listLeadsWithPaymentMethod() {
+  if (!canUseDatabase()) {
+    return [] as PlatinumLeadRecord[];
+  }
+
+  const pool = getPool();
+
+  const result = await pool.query<PlatinumLeadRecord>(
+    `
+      select
+        id,
+        email,
+        first_name as "firstName",
+        last_name as "lastName",
+        billing_cycle as "billingCycle",
+        jersey_tier as "jerseyTier",
+        status,
+        stripe_customer_id as "stripeCustomerId",
+        stripe_payment_method_id as "stripePaymentMethodId",
+        stripe_checkout_session_id as "stripeCheckoutSessionId",
+        amount_cents as "amountCents",
+        currency,
+        created_at as "createdAt"
+      from platinum_leads
+      where stripe_payment_method_id is not null
+        and stripe_customer_id is not null
+      order by created_at desc
+      limit 100
+    `,
+  );
+
+  return result.rows;
 }
 
 export async function updateLeadCheckoutStatus({

@@ -1,60 +1,73 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import {
-  normalizeLeadInput,
-  savePlatinumLead,
-  setLeadCustomerId,
-  type BillingCycle,
-  type JerseyTier,
-  type PlatinumLeadInput,
-} from "@/lib/platinum-leads";
-import {
   attachStripeCustomerId,
   upsertLocalCustomer,
 } from "@/lib/platinum-customers";
-import { getPricing } from "@/lib/platinum-pricing";
+import {
+  getPricing,
+  type BillingCycle,
+  type JerseyTier,
+} from "@/lib/platinum-pricing";
 
 const stripe =
   process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_")
     ? new Stripe(process.env.STRIPE_SECRET_KEY)
     : undefined;
 
-function getSelectionKey(billingCycle: BillingCycle, jerseyTier: JerseyTier) {
-  return `${billingCycle}_${jerseyTier}` as const;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type CheckoutInput = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  billingCycle?: BillingCycle;
+  jerseyTier?: JerseyTier;
+};
+
+function asText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function getFallbackPaymentLink(
-  billingCycle: BillingCycle,
-  jerseyTier: JerseyTier,
-) {
-  const key = getSelectionKey(billingCycle, jerseyTier);
-  const links: Record<ReturnType<typeof getSelectionKey>, string | undefined> = {
-    monthly_fan: process.env.NEXT_PUBLIC_STRIPE_MONTHLY_PAYMENT_LINK_URL,
-    yearly_fan: process.env.NEXT_PUBLIC_STRIPE_YEARLY_PAYMENT_LINK_URL,
-    monthly_authentic:
-      process.env.NEXT_PUBLIC_STRIPE_MONTHLY_AUTHENTIC_PAYMENT_LINK_URL,
-    yearly_authentic:
-      process.env.NEXT_PUBLIC_STRIPE_YEARLY_AUTHENTIC_PAYMENT_LINK_URL,
-  };
+function normalize(input: CheckoutInput) {
+  const firstName = asText(input.firstName);
+  const lastName = asText(input.lastName);
+  const email = asText(input.email).toLowerCase();
+  const billingCycle: BillingCycle =
+    input.billingCycle === "yearly" ? "yearly" : "monthly";
+  const jerseyTier: JerseyTier =
+    input.jerseyTier === "authentic" ? "authentic" : "fan";
 
-  return links[key];
-}
+  if (!firstName) {
+    throw new Error("El nombre es obligatorio.");
+  }
 
-function addEmailToPaymentLink(url: string, email: string) {
-  const paymentUrl = new URL(url);
-  paymentUrl.searchParams.set("prefilled_email", email);
-  return paymentUrl.toString();
+  if (!emailPattern.test(email)) {
+    throw new Error("Introduce un email válido.");
+  }
+
+  return { firstName, lastName, email, billingCycle, jerseyTier };
 }
 
 export async function POST(request: Request) {
   try {
-    const payload = (await request.json()) as PlatinumLeadInput;
-    const normalized = normalizeLeadInput(payload);
+    if (!stripe) {
+      return NextResponse.json(
+        { error: "Configura STRIPE_SECRET_KEY para iniciar el pago." },
+        { status: 400 },
+      );
+    }
+
+    const payload = (await request.json()) as CheckoutInput;
+    const normalized = normalize(payload);
     const pricing = getPricing(normalized.billingCycle, normalized.jerseyTier);
-    const fallbackLink = getFallbackPaymentLink(
-      normalized.billingCycle,
-      normalized.jerseyTier,
-    );
+
+    if (!pricing) {
+      return NextResponse.json(
+        { error: "Plan no disponible." },
+        { status: 400 },
+      );
+    }
 
     const customer = await upsertLocalCustomer({
       email: normalized.email,
@@ -62,119 +75,80 @@ export async function POST(request: Request) {
       lastName: normalized.lastName,
       billingCycle: normalized.billingCycle,
       jerseyTier: normalized.jerseyTier,
-      amountCents: pricing?.amountCents,
-      currency: pricing?.currency,
+      amountCents: pricing.amountCents,
+      currency: pricing.currency,
     });
 
-    const lead = await savePlatinumLead(
-      payload,
-      "checkout_started",
-      undefined,
-      customer?.id,
-    );
+    let stripeCustomerId = customer?.stripeCustomerId ?? null;
 
-    if (stripe && pricing) {
-      let stripeCustomerId = customer?.stripeCustomerId ?? null;
-
-      if (!stripeCustomerId) {
-        const stripeCustomer = await stripe.customers.create({
-          email: normalized.email,
-          name: `${normalized.firstName} ${normalized.lastName}`.trim(),
-          metadata: {
-            local_customer_id: customer?.id ?? "",
-            source: "madridista-platinum-poc",
-          },
-        });
-        stripeCustomerId = stripeCustomer.id;
-        if (customer?.id) {
-          await attachStripeCustomerId({
-            id: customer.id,
-            stripeCustomerId,
-          });
-        }
-      }
-
-      const origin =
-        request.headers.get("origin") ||
-        process.env.NEXT_PUBLIC_SITE_URL ||
-        "http://localhost:3000";
-
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        customer: stripeCustomerId,
-        client_reference_id: lead.id,
-        line_items: [
-          {
-            price_data: {
-              currency: pricing.currency,
-              product_data: {
-                name: pricing.label,
-              },
-              unit_amount: pricing.amountCents,
-            },
-            quantity: 1,
-          },
-        ],
-        payment_intent_data: {
-          setup_future_usage: "off_session",
-          metadata: {
-            lead_id: lead.id,
-            customer_id: customer?.id ?? "",
-            billing_cycle: normalized.billingCycle,
-            jersey_tier: normalized.jerseyTier,
-            kind: "initial",
-            source: "madridista-platinum-poc",
-          },
-        },
-        saved_payment_method_options: {
-          payment_method_save: "enabled",
-        },
+    if (!stripeCustomerId) {
+      const stripeCustomer = await stripe.customers.create({
+        email: normalized.email,
+        name: `${normalized.firstName} ${normalized.lastName}`.trim(),
         metadata: {
-          lead_id: lead.id,
+          local_customer_id: customer?.id ?? "",
+          source: "madridista-platinum-poc",
+        },
+      });
+      stripeCustomerId = stripeCustomer.id;
+      if (customer?.id) {
+        await attachStripeCustomerId({
+          id: customer.id,
+          stripeCustomerId,
+        });
+      }
+    }
+
+    const origin =
+      request.headers.get("origin") ||
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      "http://localhost:3000";
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer: stripeCustomerId,
+      line_items: [
+        {
+          price_data: {
+            currency: pricing.currency,
+            product_data: {
+              name: pricing.label,
+            },
+            unit_amount: pricing.amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      payment_intent_data: {
+        setup_future_usage: "off_session",
+        metadata: {
           customer_id: customer?.id ?? "",
           billing_cycle: normalized.billingCycle,
           jersey_tier: normalized.jerseyTier,
-          payment_method_preference: normalized.paymentMethod,
-          amount_cents: String(pricing.amountCents),
-          currency: pricing.currency,
+          kind: "initial",
           source: "madridista-platinum-poc",
         },
-        success_url: `${origin}/gracias?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${origin}/?checkout=cancelled&lead=${lead.id}`,
-      });
-
-      if (!session.url) {
-        throw new Error("Stripe no devolvió URL de Checkout.");
-      }
-
-      await savePlatinumLead(
-        { ...payload, id: lead.id },
-        "checkout_started",
-        session.id,
-        customer?.id,
-      );
-
-      if (customer?.id) {
-        await setLeadCustomerId({ leadId: lead.id, customerId: customer.id });
-      }
-
-      return NextResponse.json({ id: lead.id, url: session.url });
-    }
-
-    if (fallbackLink) {
-      return NextResponse.json({
-        id: lead.id,
-        url: addEmailToPaymentLink(fallbackLink, normalized.email),
-      });
-    }
-
-    return NextResponse.json(
-      {
-        error:
-          "No hay configuración de precios ni Payment Link para la combinación seleccionada.",
       },
-      { status: 400 },
-    );
+      saved_payment_method_options: {
+        payment_method_save: "enabled",
+      },
+      metadata: {
+        customer_id: customer?.id ?? "",
+        billing_cycle: normalized.billingCycle,
+        jersey_tier: normalized.jerseyTier,
+        amount_cents: String(pricing.amountCents),
+        currency: pricing.currency,
+        source: "madridista-platinum-poc",
+      },
+      success_url: `${origin}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/?checkout=cancelled`,
+    });
+
+    if (!session.url) {
+      throw new Error("Stripe no devolvió URL de Checkout.");
+    }
+
+    return NextResponse.json({ id: customer?.id ?? null, url: session.url });
   } catch (error) {
     return NextResponse.json(
       {

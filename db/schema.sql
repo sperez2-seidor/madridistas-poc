@@ -23,60 +23,8 @@ create table if not exists platinum_customers (
 create index if not exists platinum_customers_stripe_customer_idx
   on platinum_customers (stripe_customer_id);
 
-create table if not exists platinum_leads (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  first_name text not null,
-  last_name text not null default '',
-  card_first_name text,
-  card_last_name text,
-  billing_cycle text not null default 'monthly'
-    check (billing_cycle in ('monthly', 'yearly')),
-  jersey_tier text not null default 'fan'
-    check (jersey_tier in ('fan', 'authentic')),
-  payment_method_preference text
-    check (payment_method_preference in ('paypal', 'card')),
-  address_line1 text,
-  postal_code text,
-  city text,
-  region text,
-  country text,
-  legal_terms_accepted boolean not null default false,
-  source text not null default 'madridista-platinum-poc',
-  status text not null default 'draft'
-    check (status in ('draft', 'checkout_started', 'paid', 'cancelled')),
-  stripe_checkout_session_id text,
-  stripe_customer_id text,
-  stripe_payment_method_id text,
-  amount_cents integer,
-  currency text,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists platinum_leads_email_idx on platinum_leads (email);
-create index if not exists platinum_leads_status_idx on platinum_leads (status);
-create index if not exists platinum_leads_created_at_idx on platinum_leads (created_at desc);
-
-alter table platinum_leads
-  add column if not exists stripe_payment_method_id text,
-  add column if not exists amount_cents integer,
-  add column if not exists currency text,
-  add column if not exists customer_id uuid references platinum_customers(id) on delete set null;
-
-create index if not exists platinum_leads_customer_idx on platinum_leads (customer_id);
-
-alter table platinum_leads
-  drop column if exists stripe_subscription_id,
-  drop column if exists stripe_subscription_status,
-  drop column if exists stripe_price_id,
-  drop column if exists stripe_product_id,
-  drop column if exists stripe_latest_invoice_id;
-
 create table if not exists platinum_charges (
   id uuid primary key default gen_random_uuid(),
-  lead_id uuid references platinum_leads(id) on delete set null,
   customer_id uuid references platinum_customers(id) on delete set null,
   stripe_payment_intent_id text,
   stripe_charge_id text,
@@ -93,13 +41,6 @@ create table if not exists platinum_charges (
   updated_at timestamptz not null default now()
 );
 
-alter table platinum_charges
-  add column if not exists customer_id uuid references platinum_customers(id) on delete set null;
-
-alter table platinum_charges
-  alter column lead_id drop not null;
-
-create index if not exists platinum_charges_lead_idx on platinum_charges (lead_id);
 create index if not exists platinum_charges_customer_idx on platinum_charges (customer_id);
 create index if not exists platinum_charges_payment_intent_idx on platinum_charges (stripe_payment_intent_id);
 create index if not exists platinum_charges_created_at_idx on platinum_charges (created_at desc);
@@ -111,13 +52,6 @@ begin
   return new;
 end;
 $$ language plpgsql;
-
-drop trigger if exists platinum_leads_set_updated_at on platinum_leads;
-
-create trigger platinum_leads_set_updated_at
-before update on platinum_leads
-for each row
-execute function set_updated_at();
 
 drop trigger if exists platinum_customers_set_updated_at on platinum_customers;
 
@@ -132,3 +66,7 @@ create trigger platinum_charges_set_updated_at
 before update on platinum_charges
 for each row
 execute function set_updated_at();
+
+-- cleanup: drop legacy leads table from earlier iterations
+drop table if exists platinum_leads cascade;
+alter table platinum_charges drop column if exists lead_id;

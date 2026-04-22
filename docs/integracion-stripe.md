@@ -21,7 +21,6 @@ No se usan Stripe Billing (Subscriptions / Prices recurrentes), Stripe Invoices,
 │                      │      │  ┌──────────────────────┐  │      │   SetupIntent)      │
 └──────────────────────┘      │  │ BBDD intermedia      │  │      └──────────┬──────────┘
                               │  │ - customers (email)  │  │                 │
-                              │  │ - socios / leads     │  │                 │
                               │  │ - historial cobros   │  │                 │
                               │  └──────────────────────┘  │                 │
                               └───────────────┬────────────┘                 │
@@ -30,10 +29,10 @@ No se usan Stripe Billing (Subscriptions / Prices recurrentes), Stripe Invoices,
 ```
 
 - **Stripe** guarda el *Customer*, los *PaymentMethod* (tokens de las tarjetas) y el historial real de autorizaciones.
-- **Real Madrid** mantiene una **BBDD intermedia** con al menos tres entidades:
+- **Real Madrid** mantiene una **BBDD intermedia** con dos entidades:
   - **Clientes** (tabla intermedia, clave única `email`) → guarda `stripe_customer_id` y `stripe_payment_method_id` activa. Es el puente entre la identidad del socio y los tokens en Stripe.
-  - **Socios/leads/altas** → estado de negocio del alta (plan, ciclo, dirección de envío, etc.).
   - **Historial de cobros** → cada intento contra Stripe.
+  - El estado de negocio del alta (plan, ciclo, dirección de envío, etc.) vive en el core de RM y queda fuera del alcance de esta POC.
 - El motor de billing de Real Madrid lanza los cobros cuando procede, llamando a `paymentIntents.create({ off_session: true, confirm: true })`.
 - Cuando un cobro falla por problema de tarjeta, RM dispara un flujo de **cambio de método de pago** contra Stripe con `mode: "setup"` (ver Paso 7).
 
@@ -45,7 +44,7 @@ No se usan Stripe Billing (Subscriptions / Prices recurrentes), Stripe Invoices,
 |---|---|---|
 | `Customer` | Contenedor del socio en Stripe. **Se crea una vez por socio** y se reutiliza en todas las Checkout Sessions posteriores (alta + cambios de tarjeta) | `stripe_customer_id` (clave `email` en la tabla intermedia) |
 | `PaymentMethod` | Token de la tarjeta reutilizable off-session | `stripe_payment_method_id` + opcional `card_brand`, `card_last4` |
-| `Checkout Session` (`mode: "payment"`) | Página hosted para capturar la 1ª cuota y guardar la tarjeta | `stripe_checkout_session_id` |
+| `Checkout Session` (`mode: "payment"`) | Página hosted para capturar la 1ª cuota y guardar la tarjeta | Sólo auditoría (opcional) |
 | `Checkout Session` (`mode: "setup"`) | Página hosted para **cambiar de tarjeta sin cobrar** | Sólo auditoría |
 | `PaymentIntent` | Cada intento de cobro (inicial y recobros) | `stripe_payment_intent_id` por cobro |
 | `SetupIntent` | Generado por la Checkout Session de `setup` | Sólo auditoría |
@@ -93,7 +92,7 @@ Objetos que **no** se usan: `Subscription`, `Price` recurrente, `Invoice`, `Subs
 
 ### Paso 2 — Modelado de datos en RM
 
-Se necesitan **tres** tablas nuevas (o su equivalente en el modelo actual):
+Se necesitan **dos** tablas nuevas (o su equivalente en el modelo actual):
 
 **A. Tabla intermedia de clientes** — puente email ↔ Stripe. Clave única `email`.
 
@@ -106,27 +105,17 @@ Se necesitan **tres** tablas nuevas (o su equivalente en el modelo actual):
 | `stripe_payment_method_id` | text | `pm_...` — tarjeta activa ahora mismo |
 | `card_brand` | text | `visa`, `mastercard`, … (UI operativa) |
 | `card_last4` | text | Últimos 4 dígitos (UI operativa, nunca PAN completo) |
-| `billing_cycle` / `jersey_tier` | text | Snapshot del plan actual *(o vivir en la tabla de socios si RM lo prefiere)* |
+| `billing_cycle` / `jersey_tier` | text | Snapshot del plan actual |
 | `amount_cents` / `currency` | int / text | Importe del próximo cobro |
 
-> Por qué una tabla aparte: si varias altas tienen el mismo email, se reutiliza el **mismo** `stripe_customer_id` y por tanto las **mismas** tarjetas guardadas. Si metiéramos los IDs de Stripe en la tabla de altas/leads, cada alta generaría un customer nuevo y el socio nunca vería sus tarjetas.
+> Por qué una tabla aparte: si varias altas tienen el mismo email, se reutiliza el **mismo** `stripe_customer_id` y por tanto las **mismas** tarjetas guardadas. Si metiéramos los IDs de Stripe en la tabla de altas del core de RM, cada alta generaría un customer nuevo y el socio nunca vería sus tarjetas.
 
-**B. Tabla de socios / leads** — estado de negocio del alta.
-
-Campos mínimos extra para la integración:
-
-| Campo | Tipo | Notas |
-|---|---|---|
-| `customer_id` | uuid | FK a la tabla de clientes intermedia |
-| `stripe_checkout_session_id` | text | Sólo informativo / auditoría |
-
-**C. Tabla de cobros** — historial.
+**B. Tabla de cobros** — historial.
 
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` | uuid | PK |
 | `customer_id` | uuid | FK a la tabla de clientes |
-| `lead_id` / `socio_id` | uuid | FK al alta concreta (opcional) |
 | `stripe_payment_intent_id` | text | Único por intento |
 | `stripe_charge_id` | text | Si hubo `Charge` asociado |
 | `kind` | enum | `initial` / `recurring` |
@@ -136,6 +125,8 @@ Campos mínimos extra para la integración:
 | `failure_code` | text | Código de Stripe si falló (ej. `card_declined`) |
 | `failure_message` | text | Mensaje humano |
 | `created_at` / `updated_at` | timestamptz | |
+
+> El estado de negocio del alta (plan, ciclo, dirección de envío, …) vive en la tabla de socios/altas del core de RM. Esta POC **no** persiste esa información — se limita a lo estrictamente necesario para cobrar y mantener la tarjeta activa.
 
 ### Paso 3 — Alta del socio: upsert cliente + Checkout Session (1ª cuota + guardar tarjeta)
 
@@ -162,7 +153,6 @@ if (!stripeCustomerId) {
 const session = await stripe.checkout.sessions.create({
   mode: "payment",
   customer: stripeCustomerId,                     // 🔑 reutiliza el customer → enseña tarjetas guardadas
-  client_reference_id: leadId,
   line_items: [{
     price_data: {
       currency: "eur",
@@ -173,12 +163,12 @@ const session = await stripe.checkout.sessions.create({
   }],
   payment_intent_data: {
     setup_future_usage: "off_session",            // 🔑 la tarjeta queda reutilizable para recobros
-    metadata: { lead_id: leadId, customer_id: customer.id, kind: "initial" },
+    metadata: { customer_id: customer.id, kind: "initial" },
   },
   saved_payment_method_options: {
     payment_method_save: "enabled",               // 🔑 marca la PM como allow_redisplay=always
   },
-  metadata: { lead_id: leadId, customer_id: customer.id, billing_cycle: "monthly" },
+  metadata: { customer_id: customer.id, billing_cycle: "monthly" },
   success_url: "https://realmadrid.com/gracias?session_id={CHECKOUT_SESSION_ID}",
   cancel_url:  "https://realmadrid.com/?checkout=cancelled",
 });
@@ -230,7 +220,6 @@ if (event.type === "checkout.session.completed") {
   // 3. Registrar el cobro inicial en el historial (upsert por payment_intent.id)
   await upsertChargeByPaymentIntent({
     customerId: localCustomerId,
-    leadId: session.client_reference_id,
     stripePaymentIntentId: pi.id,
     stripeChargeId: pi.latest_charge as string,
     kind: "initial",
@@ -239,8 +228,7 @@ if (event.type === "checkout.session.completed") {
     status: "succeeded",
   });
 
-  // 4. Marcar el alta como activa
-  await activateLead(session.client_reference_id);
+  // 4. Marcar el alta como activa en el core de RM (fuera del alcance de esta POC)
 }
 ```
 
@@ -392,7 +380,6 @@ Cualquier cambio de estado post-creación llega por webhook. Mínimo a implement
 |---|---|
 | `checkout.session.completed` (`mode: "payment"`) | Alta: persistir PM y primer cobro en `customers` + `charges` |
 | `checkout.session.completed` (`mode: "setup"`) | Cambio de tarjeta: actualizar PM en `customers` (ver Paso 7) |
-| `checkout.session.expired` | El socio abandonó → marcar lead como `cancelled` |
 | `payment_intent.succeeded` | Marcar el cobro como `succeeded`, avanzar ciclo |
 | `payment_intent.payment_failed` | Marcar `failed`, leer `last_payment_error.code`, disparar dunning |
 | `payment_intent.processing` | Estado intermedio (SEPA), esperar resolución |
@@ -413,7 +400,6 @@ Cualquier cambio de estado post-creación llega por webhook. Mínimo a implement
 3. **Escenarios a validar**:
    - Alta OK con 1ª cuota → aparece fila en `customers` con `stripe_customer_id` + `stripe_payment_method_id` + `card_last4`.
    - **2ª alta con el mismo email** → la Checkout Session muestra la tarjeta guardada arriba del formulario (reutilización de customer).
-   - Cancelación en Checkout (socio cierra la pestaña) → `checkout.session.expired`.
    - Recobro off-session OK (`/backoffice`).
    - Recobro que cae en SCA: verificar que RM detecta `requires_action` y lanza flujo de autenticación.
    - Recobro que falla por declinación: comprobar que se marca `failed` y se dispara dunning.
@@ -439,8 +425,8 @@ Cualquier cambio de estado post-creación llega por webhook. Mínimo a implement
 | Parte del POC | Equivalente en producción RM |
 |---|---|
 | Tabla `platinum_customers` (email UNIQUE, `stripe_customer_id`, `stripe_payment_method_id`) | Tabla intermedia de clientes en el core de RM |
-| Tabla `platinum_leads` | Entidad Alta/Socio del core de RM |
 | Tabla `platinum_charges` | Módulo de historial/ledger del motor de billing de RM |
+| *(no existe en la POC)* | Entidad Alta/Socio del core de RM (fuera de alcance) |
 | `/checkout` + `/api/platinum-checkout` | Alta en web oficial + backend de RM que crea la Checkout Session |
 | `/api/stripe-webhook` | Endpoint interno de RM detrás de API Gateway / WAF |
 | Página `/backoffice` + botón "Ejecutar cobro" | Scheduler interno + consola de operaciones (llama al mismo endpoint Stripe con `off_session: true`) |

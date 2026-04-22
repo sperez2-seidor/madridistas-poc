@@ -23,7 +23,7 @@ const connectionString =
   process.env.DATABASE_URL ??
   "postgres://postgres:postgres@localhost:54322/madridistas";
 
-const TABLES = ["platinum_charges", "platinum_leads", "platinum_customers"];
+const TABLES = ["platinum_charges", "platinum_customers"];
 
 const client = new Client({ connectionString });
 await client.connect();

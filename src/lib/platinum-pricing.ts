@@ -1,4 +1,5 @@
-import type { BillingCycle, JerseyTier } from "./platinum-leads";
+export type BillingCycle = "monthly" | "yearly";
+export type JerseyTier = "fan" | "authentic";
 
 export type PricingKey = `${BillingCycle}_${JerseyTier}`;
 

@@ -9,8 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
-    "stripe:setup": "node scripts/create-stripe-resources.mjs"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.2.0",

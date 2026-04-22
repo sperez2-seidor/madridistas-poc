@@ -1,5 +1,5 @@
 import { getPool } from "./db";
-import type { BillingCycle, JerseyTier } from "./platinum-leads";
+import type { BillingCycle, JerseyTier } from "./platinum-pricing";
 
 export type PlatinumCustomer = {
   id: string;

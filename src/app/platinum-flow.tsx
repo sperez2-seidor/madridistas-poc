@@ -452,33 +452,16 @@ export default function PlatinumFlow({
     });
   }
 
-  async function persistDraft(nextStep: Step) {
-    setIsSaving(true);
+  function goToStep(nextStep: Step) {
+    setCurrentStep(nextStep);
     setError("");
-
-    try {
-      const payload = await postJson<{ id: string }>(
-        "/api/platinum-leads",
-        form,
-      );
-      setForm((current) => ({ ...current, id: payload.id }));
-      setCurrentStep(nextStep);
-    } catch (draftError) {
-      setError(
-        draftError instanceof Error
-          ? draftError.message
-          : "No se pudo guardar el avance.",
-      );
-    } finally {
-      setIsSaving(false);
-    }
   }
 
-  async function next() {
+  function next() {
     const index = stepIndex(currentStep);
 
     if (index < mainSteps.length - 1) {
-      await persistDraft(mainSteps[index + 1]);
+      goToStep(mainSteps[index + 1]);
     }
   }
 
@@ -497,9 +480,9 @@ export default function PlatinumFlow({
     }
   }
 
-  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await next();
+    next();
   }
 
   async function preparePaymentStep() {
@@ -528,47 +511,36 @@ export default function PlatinumFlow({
     }
   }
 
-  async function preparePaypalStep() {
-    setIsSaving(true);
+  function preparePaypalStep() {
     setError("");
 
-    try {
-      const payload = await postJson<{ id: string }>("/api/platinum-leads", {
-        ...form,
-        paymentMethod: "paypal",
-        legalTermsAccepted: true,
-      });
+    const mockReference =
+      form.id ??
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `mock-${Date.now()}`);
 
-      const searchParams = new URLSearchParams({
-        lead: payload.id,
-        paymentMethod: "paypal",
-        redirect_status: "succeeded",
-      });
+    const searchParams = new URLSearchParams({
+      lead: mockReference,
+      paymentMethod: "paypal",
+      redirect_status: "succeeded",
+    });
 
-      if (form.email) {
-        searchParams.set("email", form.email);
-      }
-
-      if (form.firstName) {
-        searchParams.set("firstName", form.firstName);
-      }
-
-      setForm((current) => ({
-        ...current,
-        id: payload.id,
-        paymentMethod: "paypal",
-        legalTermsAccepted: true,
-      }));
-      router.push(`/checkout/paypal?${searchParams.toString()}`);
-    } catch (paypalError) {
-      setError(
-        paypalError instanceof Error
-          ? paypalError.message
-          : "No se pudo preparar PayPal.",
-      );
-    } finally {
-      setIsSaving(false);
+    if (form.email) {
+      searchParams.set("email", form.email);
     }
+
+    if (form.firstName) {
+      searchParams.set("firstName", form.firstName);
+    }
+
+    setForm((current) => ({
+      ...current,
+      id: mockReference,
+      paymentMethod: "paypal",
+      legalTermsAccepted: true,
+    }));
+    router.push(`/checkout/paypal?${searchParams.toString()}`);
   }
 
   return (
@@ -653,7 +625,7 @@ export default function PlatinumFlow({
                     className="flow-action compact"
                     onClick={() => {
                       updateField("jerseyTier", option.jerseyTier);
-                      void next();
+                      next();
                     }}
                     type="button"
                   >
@@ -694,7 +666,7 @@ export default function PlatinumFlow({
           </button>
           <button
             className="flow-action"
-            onClick={() => void next()}
+            onClick={() => next()}
             type="button"
           >
             Genial. Sigamos
@@ -709,7 +681,7 @@ export default function PlatinumFlow({
             className="stacked-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void persistDraft("address");
+              goToStep("address");
             }}
           >
             <Field
@@ -739,7 +711,7 @@ export default function PlatinumFlow({
             className="stacked-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void next();
+              next();
             }}
           >
             <Field
@@ -847,7 +819,7 @@ export default function PlatinumFlow({
             setForm((current) => ({ ...current, paymentMethod: method }))
           }
           onPayCard={() => void preparePaymentStep()}
-          onPayPaypal={() => void preparePaypalStep()}
+          onPayPaypal={preparePaypalStep}
         />
       ) : null}
 

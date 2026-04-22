@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import {
-  attachStripePaymentToLead,
-  updateLeadCheckoutStatus,
-} from "@/lib/platinum-leads";
 import { upsertChargeByPaymentIntent } from "@/lib/platinum-charges";
 import {
   attachPaymentMethodToCustomer,
@@ -70,19 +66,8 @@ async function syncSetupSession(session: Stripe.Checkout.Session) {
 }
 
 async function syncCheckoutSession(session: Stripe.Checkout.Session) {
-  const leadId = session.client_reference_id || session.metadata?.lead_id;
-
   const paymentIntentId = toId(session.payment_intent);
-  if (!paymentIntentId) {
-    if (leadId) {
-      await updateLeadCheckoutStatus({
-        leadId,
-        stripeCheckoutSessionId: session.id,
-        status: session.payment_status === "paid" ? "paid" : "checkout_started",
-      });
-    }
-    return;
-  }
+  if (!paymentIntentId) return;
 
   const paymentIntent = await retrievePaymentIntent(paymentIntentId);
   const stripeCustomerId = toId(session.customer) || toId(paymentIntent.customer);
@@ -112,20 +97,7 @@ async function syncCheckoutSession(session: Stripe.Checkout.Session) {
     localCustomerId = localCustomer?.id ?? null;
   }
 
-  if (leadId) {
-    await attachStripePaymentToLead({
-      leadId,
-      stripeCustomerId,
-      stripePaymentMethodId: paymentMethodId,
-      stripeCheckoutSessionId: session.id,
-      amountCents,
-      currency,
-      status: paymentIntent.status === "succeeded" ? "paid" : "checkout_started",
-    });
-  }
-
   await upsertChargeByPaymentIntent({
-    leadId: leadId ?? null,
     customerId: localCustomerId,
     stripePaymentIntentId: paymentIntent.id,
     stripeChargeId: chargeId ?? null,
@@ -158,7 +130,6 @@ function mapPaymentIntentStatus(
 }
 
 async function syncPaymentIntent(paymentIntent: Stripe.PaymentIntent) {
-  const leadId = paymentIntent.metadata?.lead_id;
   const customerIdFromMetadata = paymentIntent.metadata?.customer_id;
   const stripeCustomerId = toId(paymentIntent.customer);
   const chargeId = toId(paymentIntent.latest_charge);
@@ -170,7 +141,6 @@ async function syncPaymentIntent(paymentIntent: Stripe.PaymentIntent) {
   }
 
   await upsertChargeByPaymentIntent({
-    leadId: leadId ?? null,
     customerId: localCustomerId,
     stripePaymentIntentId: paymentIntent.id,
     stripeChargeId: chargeId ?? null,
@@ -235,21 +205,6 @@ export async function POST(request: Request) {
     } else {
       await syncCheckoutSession(session);
     }
-    return NextResponse.json({ received: true });
-  }
-
-  if (event.type === "checkout.session.expired") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const leadId = session.client_reference_id || session.metadata?.lead_id;
-
-    if (leadId) {
-      await updateLeadCheckoutStatus({
-        leadId,
-        stripeCheckoutSessionId: session.id,
-        status: "cancelled",
-      });
-    }
-
     return NextResponse.json({ received: true });
   }
 

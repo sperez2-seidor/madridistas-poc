@@ -10,7 +10,6 @@ export type ChargeStatus =
 
 export type PlatinumCharge = {
   id: string;
-  leadId: string | null;
   customerId: string | null;
   stripePaymentIntentId: string | null;
   stripeChargeId: string | null;
@@ -29,7 +28,6 @@ function canUseDatabase() {
 }
 
 export async function insertCharge({
-  leadId,
   customerId,
   stripePaymentIntentId,
   kind,
@@ -39,7 +37,6 @@ export async function insertCharge({
   failureCode,
   failureMessage,
 }: {
-  leadId?: string | null;
   customerId?: string | null;
   stripePaymentIntentId?: string | null;
   kind: ChargeKind;
@@ -58,7 +55,6 @@ export async function insertCharge({
   const result = await pool.query<{ id: string }>(
     `
       insert into platinum_charges (
-        lead_id,
         customer_id,
         stripe_payment_intent_id,
         kind,
@@ -68,11 +64,10 @@ export async function insertCharge({
         failure_code,
         failure_message
       )
-      values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9)
+      values ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
       returning id
     `,
     [
-      leadId ?? null,
       customerId ?? null,
       stripePaymentIntentId ?? null,
       kind,
@@ -88,7 +83,6 @@ export async function insertCharge({
 }
 
 export async function upsertChargeByPaymentIntent({
-  leadId,
   customerId,
   stripePaymentIntentId,
   stripeChargeId,
@@ -99,7 +93,6 @@ export async function upsertChargeByPaymentIntent({
   failureCode,
   failureMessage,
 }: {
-  leadId?: string | null;
   customerId?: string | null;
   stripePaymentIntentId: string;
   stripeChargeId?: string | null;
@@ -129,9 +122,8 @@ export async function upsertChargeByPaymentIntent({
           status = $2,
           stripe_charge_id = coalesce($3, stripe_charge_id),
           customer_id = coalesce($4::uuid, customer_id),
-          lead_id = coalesce($5::uuid, lead_id),
-          failure_code = $6,
-          failure_message = $7,
+          failure_code = $5,
+          failure_message = $6,
           updated_at = now()
         where id = $1::uuid
       `,
@@ -140,7 +132,6 @@ export async function upsertChargeByPaymentIntent({
         status,
         stripeChargeId ?? null,
         customerId ?? null,
-        leadId ?? null,
         failureCode ?? null,
         failureMessage ?? null,
       ],
@@ -148,14 +139,13 @@ export async function upsertChargeByPaymentIntent({
     return;
   }
 
-  if (!leadId && !customerId) {
+  if (!customerId) {
     return;
   }
 
   await pool.query(
     `
       insert into platinum_charges (
-        lead_id,
         customer_id,
         stripe_payment_intent_id,
         stripe_charge_id,
@@ -166,10 +156,9 @@ export async function upsertChargeByPaymentIntent({
         failure_code,
         failure_message
       )
-      values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10)
+      values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
     `,
     [
-      leadId ?? null,
       customerId ?? null,
       stripePaymentIntentId,
       stripeChargeId ?? null,
@@ -185,7 +174,6 @@ export async function upsertChargeByPaymentIntent({
 
 const CHARGE_COLUMNS = `
   id,
-  lead_id as "leadId",
   customer_id as "customerId",
   stripe_payment_intent_id as "stripePaymentIntentId",
   stripe_charge_id as "stripeChargeId",
@@ -198,27 +186,6 @@ const CHARGE_COLUMNS = `
   created_at as "createdAt",
   updated_at as "updatedAt"
 `;
-
-export async function listChargesByLead(leadId: string) {
-  if (!canUseDatabase()) {
-    return [] as PlatinumCharge[];
-  }
-
-  const pool = getPool();
-
-  const result = await pool.query<PlatinumCharge>(
-    `
-      select ${CHARGE_COLUMNS}
-      from platinum_charges
-      where lead_id = $1::uuid
-      order by created_at desc
-      limit 50
-    `,
-    [leadId],
-  );
-
-  return result.rows;
-}
 
 export async function listChargesByCustomer(customerId: string) {
   if (!canUseDatabase()) {

@@ -1,344 +1,133 @@
-# Plan POC Stripe - Madridista Platinum
+# Plan POC Stripe — Madridista Platinum
 
-Fecha: 2026-04-14
+Fecha: 2026-04-22
 
 ## Objetivo
 
-Validar una POC lo más low-code posible para que un cliente internacional pueda contratar Madridista Platinum desde una landing, realizar el primer pago con Stripe y dejar activa la recurrencia mensual o anual hasta que finalice la implementación futura con Zuora.
+Demostrar que Real Madrid puede usar **Stripe sólo como pasarela de pago (PSP)** manteniendo su propio motor de billing. Stripe se encarga de:
 
-La POC se plantea sobre la siguiente cuenta Stripe sandbox:
+1. Capturar la tarjeta del socio (PCI out-of-scope, Checkout hosted).
+2. Cobrar la primera cuota en el alta.
+3. Ejecutar cobros posteriores cuando el motor de RM lo decida (off-session).
+4. Permitir sustituir la tarjeta de forma segura cuando el socio lo pida o cuando un cobro falle.
 
-- Account ID objetivo: `acct_1TM2j7BFe2dBiGnp`
+**Fuera de alcance**: Stripe Billing (Subscriptions, Prices recurrentes, Invoices), Payment Links, Customer Portal, Pricing Table. La lógica de planes, ciclo, prorrateos, dunning y selección de "tarjeta por defecto" vive en el sistema de Real Madrid.
 
-Nota operativa: antes de crear recursos, confirmar que el MCP de Stripe este conectado a `acct_1TM2j7BFe2dBiGnp`. En la comprobacion inicial del entorno, el MCP reporto otra cuenta conectada, por lo que no se debe ejecutar la creacion de productos/precios/links hasta validar el account activo.
+Documento de referencia técnica detallada: [`docs/integracion-stripe.md`](docs/integracion-stripe.md).
 
-## Contexto revisado
+## Arquitectura
 
-La landing pública de Madridistas muestra el producto `Madridista Platinum` con el precio `Desde 12,90 EUR/mes`, CTA `Únete como Platinum` y beneficios principales:
-
-- La camiseta de cada temporada
-- Pack de bienvenida
-- Todos los beneficios de Madridista Premium
-
-Fuente revisada: https://madridistas.com/es-ES/madridistas/landing
-
-El precio anual `149,90 EUR/año` debe tratarse como dato de negocio a validar, ya que no apareció en el HTML indexado de la landing revisada.
-
-## Alcance de la POC
-
-Incluido:
-
-- Crear producto `Madridista Platinum` en Stripe sandbox.
-- Crear dos precios recurrentes:
-   - Mensual: `12,90 EUR / mes`
-   - Anual: `149,90 EUR / año`
-
-- Crear dos Payment Links o Checkout Links alojados por Stripe.
-- Probar alta de cliente, primer pago y creación de suscripción.
-- Validar que Stripe crea y conserva los objetos necesarios para recurrencia:
-   - `Customer`
-   - `Subscription`
-   - `Invoice`
-   - `PaymentIntent`
-   - método de pago asociado a la suscripción
-
-- Revisar eventos mínimos para operación:
-   - `checkout.session.completed`
-   - `invoice.paid`
-   - `invoice.payment_failed`
-
-Fuera de alcance para esta POC:
-
-- Migración real de tokens/tarjetas desde Worldline.
-- Integración con Zuora.
-- Modificación de la landing productiva de Real Madrid.
-- Gestión completa de impuestos, facturación local, dunning avanzado y conciliación financiera.
-- Alta productiva en live mode.
-
-## Enfoque low-code recomendado
-
-Usar Stripe Payment Links con precios recurrentes para demostrar el caso de uso con el mínimo desarrollo.
-
-Ventajas:
-
-- No requiere backend para la primera prueba.
-- Stripe aloja la página de pago.
-- Stripe crea la suscripción y gestiona la recurrencia.
-- Permite probar mensual y anual con links separados.
-- Reduce riesgo de SCA/off-session frente a un flujo manual con PaymentIntents.
-
-Limitación:
-
-- Si se necesita control más fino de metadata, branding, identidad de usuario o integración con sistemas internos, conviene pasar de Payment Links a Checkout Sessions creadas por API.
-
-## Landing y comparativa de suscripciones
-
-Stripe tiene un componente low-code llamado `Pricing Table` que permite mostrar opciones de suscripcion y redirigir al usuario a Stripe Checkout. Para esta POC se puede usar para comparar:
-
-- Madridista Platinum mensual: `12,90 EUR/mes`
-- Madridista Platinum anual: `149,90 EUR/año`
-
-Uso recomendado para POC:
-
-- Crear el producto y los dos precios recurrentes.
-- Configurar una Pricing Table en Stripe con las dos opciones.
-- Embeber el snippet HTML de Stripe en una pagina de prueba.
-- Usar branding basico de Stripe: logo, color principal, bordes y texto de botones.
-
-Limitacion importante:
-
-- La `Pricing Table` acelera mucho la POC, pero no permite replicar pixel-perfect el aspecto de la landing de Madridistas. Para una landing con el mismo look & feel que Madridistas, la mejor opcion es construir una pagina propia con HTML/CSS o en el stack de Real Madrid, y usar Stripe solo para el paso de pago mediante Checkout Sessions o Payment Links.
-
-Recomendacion:
-
-- Para demo rapida: `Pricing Table`.
-- Para demo comercial que parezca Madridista: landing propia con dos CTAs y redireccion a Checkout/Payment Links.
-- Para produccion: landing propia + Checkout Sessions por API + webhooks.
-
-## Plan de ejecución vía MCP de Stripe
-
-### 1. Comprobar catálogo existente
-
-Objetivo: evitar duplicados en la sandbox.
-
-Herramientas MCP:
-
-```text
-list_products
-list_prices
+```
+┌──────────────────────┐      ┌────────────────────────────┐      ┌─────────────────────┐
+│  Frontend alta       │─────▶│  Backend Real Madrid       │─────▶│  Stripe             │
+│  (web / app socio)   │      │  (API + motor billing)     │      │  (Checkout / PI /   │
+│                      │      │  ┌──────────────────────┐  │      │   SetupIntent)      │
+└──────────────────────┘      │  │ BBDD intermedia      │  │      └──────────┬──────────┘
+                              │  │ - customers (email)  │  │                 │
+                              │  │ - historial cobros   │  │                 │
+                              │  └──────────────────────┘  │                 │
+                              └───────────────┬────────────┘                 │
+                                              │   Webhook (HTTPS)            │
+                                              │◀─────────────────────────────┘
 ```
 
-Buscar productos o precios existentes con nombres como:
+BBDD intermedia mínima:
 
-- `Madridista Platinum`
-- `Real Madrid`
-- `Madrid Platinum`
+- **`platinum_customers`** — clave funcional `email` UNIQUE, guarda `stripe_customer_id` + `stripe_payment_method_id` activa.
+- **`platinum_charges`** — historial de cobros (`initial` / `recurring`) contra Stripe.
 
-### 2. Crear producto
+## Flujos demostrados por la POC
 
-Herramienta MCP:
+### 1. Alta + 1ª cuota + tarjeta guardada off-session
 
-```text
-create_product
+- `/checkout` → `/api/platinum-checkout`:
+  - Upsert en `platinum_customers` por email.
+  - `stripe.customers.create` si no existe aún `stripe_customer_id`.
+  - `stripe.checkout.sessions.create` con:
+    - `mode: "payment"` + `customer: <cus_...>`
+    - `payment_intent_data.setup_future_usage: "off_session"` → tarjeta reutilizable.
+    - `saved_payment_method_options.payment_method_save: "enabled"` → PM con `allow_redisplay: "always"`.
+  - Redirección a la URL hosted de Stripe.
+- Webhook `checkout.session.completed` (mode `payment`):
+  - Recupera el PaymentIntent.
+  - Persiste `stripe_payment_method_id`, `card_brand`, `card_last4` en `platinum_customers`.
+  - Registra la fila `initial` en `platinum_charges`.
+
+### 2. Recobros off-session (motor mock en /backoffice)
+
+- `/backoffice` lista clientes con PM guardada y muestra su historial.
+- Botón "Ejecutar cobro" → `/api/backoffice/charge`:
+  - `stripe.paymentIntents.create({ off_session: true, confirm: true, customer, payment_method })`.
+  - Inserta / actualiza fila `recurring` en `platinum_charges`.
+- Webhook `payment_intent.succeeded` / `payment_intent.payment_failed` / `payment_intent.processing` / `payment_intent.canceled` sincroniza el estado.
+
+Este endpoint es el *stand-in* del motor de billing de RM. En producción, el scheduler interno lo invoca sin UI.
+
+### 3. Cambio de método de pago (Checkout `mode: "setup"`)
+
+- Botón "Cambiar tarjeta" en `/backoffice` → `/api/backoffice/update-payment-method`:
+  - `stripe.checkout.sessions.create({ mode: "setup", customer, payment_method_types: ["card"] })`.
+  - El socio abre la URL hosted, completa 3DS si procede, la nueva PM queda guardada en Stripe.
+- Webhook `checkout.session.completed` (mode `setup`):
+  - Recupera el SetupIntent, lee la nueva `payment_method`.
+  - Actualiza `stripe_payment_method_id`, `card_brand`, `card_last4` en `platinum_customers`.
+
+## Objetos de Stripe usados
+
+| Objeto | Rol | Persistido en RM |
+|---|---|---|
+| `Customer` | Contenedor del socio en Stripe (uno por email) | `stripe_customer_id` |
+| `PaymentMethod` | Token de tarjeta reutilizable off-session | `stripe_payment_method_id` + `card_brand` + `card_last4` |
+| `Checkout Session (mode=payment)` | Hosted, 1ª cuota + guardar tarjeta | — |
+| `Checkout Session (mode=setup)` | Hosted, cambio de tarjeta sin cobrar | — |
+| `PaymentIntent` | Cada cobro (inicial y recobros) | `stripe_payment_intent_id` en `platinum_charges` |
+| `SetupIntent` | Generado por la session `mode=setup` | Sólo auditoría |
+| `Webhook Endpoint` | Eventos asíncronos | URL en RM |
+
+No se usan: `Subscription`, `Price` recurrente, `Invoice`, `Subscription Schedule`, `Customer Portal`, `Payment Link`, `Pricing Table`.
+
+## Eventos webhook suscritos
+
+- `checkout.session.completed` (cubre mode `payment` y mode `setup`)
+- `payment_intent.succeeded`
+- `payment_intent.payment_failed`
+- `payment_intent.processing`
+- `payment_intent.canceled`
+
+## Testing
+
+Tarjetas sandbox relevantes (sólo con `sk_test_…`):
+
+- `4242 4242 4242 4242` — éxito.
+- `4000 0025 0000 3155` — requiere 3DS y simula `requires_action` en off-session.
+- `4000 0000 0000 9995` — fondos insuficientes.
+- `4000 0000 0000 0341` — éxito al guardar pero falla en off-session con `authentication_required`.
+
+Para recibir webhooks en local:
+
+```
+stripe listen --forward-to localhost:3000/api/stripe-webhook
 ```
 
-Parámetros propuestos:
+Escenarios mínimos a validar:
 
-```text
-name: Madridista Platinum
-description: La camiseta de cada temporada. Pack de bienvenida. Todos los beneficios de Madridista Premium.
-```
+- Alta OK → aparece fila en `platinum_customers` con `stripe_payment_method_id` + `card_last4` y fila `initial` en `platinum_charges`.
+- 2ª alta con el mismo email → la Checkout Session reutiliza el `Customer` existente y enseña la tarjeta guardada.
+- Recobro off-session OK desde `/backoffice`.
+- Recobro con declinación → fila `failed` en `platinum_charges`.
+- Cambio de tarjeta desde `/backoffice` → `stripe_payment_method_id` y `card_last4` actualizados tras el webhook.
 
-Resultado esperado:
+## Go-live (resumen)
 
-```text
-prod_<id>
-```
+- Cambiar claves `sk_test_…` → `sk_live_…`, recrear webhook en live y actualizar `STRIPE_WEBHOOK_SECRET`.
+- Domain verification si se activa Apple Pay.
+- Activar **"Reuse saved cards for returning customers"** en Settings → Payments.
+- SAQ-A desde Stripe Dashboard.
+- Data retention: datos de pago quedan en Stripe, metadata en RM.
+- Rate limits de Stripe (100 req/s por defecto): si hay campañas masivas, solicitar ampliación.
 
-### 3. Crear precio mensual
+## Responsabilidades
 
-Herramienta MCP:
+**Stripe**: custodia de la tarjeta (PCI L1), cobro contra banco emisor, 3DS/SCA, reembolsos, disputas, payouts.
 
-```text
-create_price
-```
-
-Parámetros:
-
-```text
-product: prod_<id>
-unit_amount: 1290
-currency: eur
-recurring.interval: month
-```
-
-Resultado esperado:
-
-```text
-price_<monthly_id>
-```
-
-### 4. Crear precio anual
-
-Herramienta MCP:
-
-```text
-create_price
-```
-
-Parámetros:
-
-```text
-product: prod_<id>
-unit_amount: 14990
-currency: eur
-recurring.interval: year
-```
-
-Resultado esperado:
-
-```text
-price_<yearly_id>
-```
-
-### 5. Crear Payment Link mensual
-
-Herramienta MCP:
-
-```text
-create_payment_link
-```
-
-Parámetros:
-
-```text
-price: price_<monthly_id>
-quantity: 1
-```
-
-Resultado esperado:
-
-```text
-https://buy.stripe.com/test_<...>
-```
-
-### 6. Crear Payment Link anual
-
-Herramienta MCP:
-
-```text
-create_payment_link
-```
-
-Parámetros:
-
-```text
-price: price_<yearly_id>
-quantity: 1
-```
-
-Resultado esperado:
-
-```text
-https://buy.stripe.com/test_<...>
-```
-
-### 7. Simular la landing
-
-Para la POC no hace falta tocar la landing productiva. Basta con preparar una página o documento interno con dos CTAs:
-
-```text
-Suscribirme mensual - 12,90 EUR/mes
-Suscribirme anual - 149,90 EUR/año
-```
-
-Cada CTA apunta al Payment Link correspondiente.
-
-### 8. Probar compras sandbox
-
-Ejecutar al menos dos pruebas:
-
-- Alta mensual con tarjeta sandbox.
-- Alta anual con tarjeta sandbox.
-
-Validar después con MCP:
-
-```text
-list_customers
-list_subscriptions
-list_invoices
-list_payment_intents
-```
-
-Evidencia esperada:
-
-- Cliente creado.
-- Suscripción activa.
-- Factura pagada.
-- PaymentIntent exitoso.
-- Precio asociado correcto: mensual o anual.
-
-### 9. Validar recurrencia y operación mínima
-
-En una POC low-code se puede validar recurrencia observando la suscripción creada y los próximos ciclos de facturación desde Stripe.
-
-Para una integración más cercana a producción, añadir webhooks mínimos:
-
-```text
-checkout.session.completed
-invoice.paid
-invoice.payment_failed
-```
-
-Uso previsto:
-
-- `checkout.session.completed`: registrar alta y asociar `customer` + `subscription`.
-- `invoice.paid`: mantener activo el entitlement Madridista Platinum.
-- `invoice.payment_failed`: activar comunicación para actualizar método de pago.
-
-### 10. Configurar Customer Portal
-
-Configurar en sandbox el Customer Portal para que el cliente pueda:
-
-- Actualizar método de pago.
-- Ver suscripción/facturas.
-- Cancelar o gestionar la suscripción si negocio lo permite.
-
-Esto evita construir pantallas propias durante la POC.
-
-## Riesgos y decisiones pendientes
-
-### Migración desde Worldline
-
-La migración de tokens actuales no debe plantearse como copia directa de tokens. Normalmente requiere un proceso formal de importación de datos de pago/PAN desde el procesador actual hacia Stripe y un fichero de mapping posterior entre IDs antiguos y objetos Stripe nuevos.
-
-Decisión pendiente:
-
-- Confirmar con Worldline/Real Madrid si pueden exportar datos de pago de forma compatible.
-- Confirmar si la importación se haría como `PaymentMethod` en Stripe.
-- Definir qué clientes deberán reintroducir tarjeta si la migración no es viable o falla.
-
-### Stripe Billing temporal vs recurrencia manual
-
-Recomendación para la urgencia: usar Stripe Billing temporalmente.
-
-Motivo:
-
-- Reduce desarrollo.
-- Gestiona facturas y recurrencia.
-- Maneja mejor reintentos y estados de suscripción.
-- Evita implementar una lógica manual de cobros off-session con PaymentIntents.
-
-Si Real Madrid exige recurrencia manual por API, la POC debe incorporar más trabajo:
-
-- Guardar `Customer` y `PaymentMethod`.
-- Crear cobros off-session.
-- Gestionar SCA y fallos de autenticación.
-- Crear lógica de reintentos.
-- Controlar estados de entitlement.
-
-### Zuora
-
-Zuora debe quedar fuera de esta POC. El objetivo es demostrar adquisición y recurrencia en Stripe. La futura migración a Zuora requiere un plan separado de transición de billing, mapping de clientes, suscripciones, métodos de pago y estados.
-
-## Entregables de la POC
-
-- Producto creado en Stripe sandbox.
-- Precio mensual creado.
-- Precio anual creado.
-- Payment Link mensual.
-- Payment Link anual.
-- Prueba de compra mensual completada.
-- Prueba de compra anual completada.
-- Evidencia de `Customer`, `Subscription`, `Invoice` y `PaymentIntent`.
-- Nota de riesgos para migración Worldline y futura transición a Zuora.
-
-## Criterio de éxito
-
-La POC se considera exitosa si se demuestra que:
-
-- Un cliente puede contratar Madridista Platinum desde un link de pago alojado por Stripe.
-- El primer pago se completa correctamente.
-- Stripe crea una suscripción recurrente mensual o anual.
-- El método de pago queda asociado para renovaciones.
-- Los objetos de Stripe permiten operar el caso hasta la integración con Zuora.
+**Real Madrid**: planes y ciclo, BBDD intermedia (email → `stripe_customer_id` / `stripe_payment_method_id`), decisión de cuándo y cuánto cobrar y qué tarjeta usar, flujo de cambio de tarjeta, escucha de webhooks, dunning, facturación fiscal, atención al socio.

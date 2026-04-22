@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { getLeadById } from "@/lib/platinum-leads";
+import {
+  getCustomerById,
+  getCustomerByEmail,
+} from "@/lib/platinum-customers";
 import {
   insertCharge,
   upsertChargeByPaymentIntent,
@@ -13,7 +16,8 @@ const stripe =
     : undefined;
 
 type ChargeRequest = {
-  leadId?: string;
+  customerId?: string;
+  email?: string;
   amountCents?: number;
   currency?: string;
 };
@@ -28,35 +32,40 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json()) as ChargeRequest;
-    const leadId = payload.leadId;
 
-    if (!leadId) {
+    if (!payload.customerId && !payload.email) {
       return NextResponse.json(
-        { error: "Falta leadId." },
+        { error: "Falta customerId o email." },
         { status: 400 },
       );
     }
 
-    const lead = await getLeadById(leadId);
-    if (!lead) {
+    const customer = payload.customerId
+      ? await getCustomerById(payload.customerId)
+      : await getCustomerByEmail(payload.email as string);
+
+    if (!customer) {
       return NextResponse.json(
-        { error: "Lead no encontrado." },
+        { error: "Cliente no encontrado en la BBDD intermedia." },
         { status: 404 },
       );
     }
 
-    if (!lead.stripeCustomerId || !lead.stripePaymentMethodId) {
+    if (!customer.stripeCustomerId || !customer.stripePaymentMethodId) {
       return NextResponse.json(
-        { error: "El lead no tiene método de pago guardado." },
+        { error: "El cliente no tiene método de pago guardado." },
         { status: 400 },
       );
     }
 
-    const pricing = getPricing(lead.billingCycle, lead.jerseyTier);
+    const pricing =
+      customer.billingCycle && customer.jerseyTier
+        ? getPricing(customer.billingCycle, customer.jerseyTier)
+        : null;
     const amountCents =
-      payload.amountCents ?? lead.amountCents ?? pricing?.amountCents;
+      payload.amountCents ?? customer.amountCents ?? pricing?.amountCents;
     const currency =
-      payload.currency ?? lead.currency ?? pricing?.currency;
+      payload.currency ?? customer.currency ?? pricing?.currency;
 
     if (!amountCents || !currency) {
       return NextResponse.json(
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
     }
 
     const pendingChargeId = await insertCharge({
-      leadId: lead.id,
+      customerId: customer.id,
       kind: "recurring",
       amountCents,
       currency,
@@ -77,22 +86,22 @@ export async function POST(request: Request) {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amountCents,
         currency,
-        customer: lead.stripeCustomerId,
-        payment_method: lead.stripePaymentMethodId,
+        customer: customer.stripeCustomerId,
+        payment_method: customer.stripePaymentMethodId,
         off_session: true,
         confirm: true,
         metadata: {
-          lead_id: lead.id,
+          customer_id: customer.id,
           kind: "recurring",
-          billing_cycle: lead.billingCycle,
-          jersey_tier: lead.jerseyTier,
+          billing_cycle: customer.billingCycle ?? "",
+          jersey_tier: customer.jerseyTier ?? "",
           source: "madridista-backoffice",
           charge_id: pendingChargeId ?? "",
         },
       });
 
       await upsertChargeByPaymentIntent({
-        leadId: lead.id,
+        customerId: customer.id,
         stripePaymentIntentId: paymentIntent.id,
         stripeChargeId:
           typeof paymentIntent.latest_charge === "string"
@@ -126,7 +135,7 @@ export async function POST(request: Request) {
 
       if (paymentIntentId) {
         await upsertChargeByPaymentIntent({
-          leadId: lead.id,
+          customerId: customer.id,
           stripePaymentIntentId: paymentIntentId,
           kind: "recurring",
           amountCents,

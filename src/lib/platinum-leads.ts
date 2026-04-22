@@ -120,6 +120,7 @@ export async function savePlatinumLead(
   input: PlatinumLeadInput,
   status: "draft" | "checkout_started" = "draft",
   stripeCheckoutSessionId?: string,
+  customerId?: string,
 ) {
   const lead = normalizeLeadInput(input);
 
@@ -156,6 +157,7 @@ export async function savePlatinumLead(
         legal_terms_accepted,
         status,
         stripe_checkout_session_id,
+        customer_id,
         metadata
       )
       values (
@@ -176,7 +178,8 @@ export async function savePlatinumLead(
         $15,
         $16,
         $17,
-        $18::jsonb
+        $18::uuid,
+        $19::jsonb
       )
       on conflict (id) do update set
         email = excluded.email,
@@ -198,6 +201,7 @@ export async function savePlatinumLead(
           excluded.stripe_checkout_session_id,
           platinum_leads.stripe_checkout_session_id
         ),
+        customer_id = coalesce(excluded.customer_id, platinum_leads.customer_id),
         metadata = excluded.metadata,
         updated_at = now()
       returning
@@ -226,6 +230,7 @@ export async function savePlatinumLead(
       lead.legalTermsAccepted,
       status,
       stripeCheckoutSessionId ?? null,
+      customerId ?? null,
       JSON.stringify({
         source: "madridista-platinum-poc",
         savedAt: new Date().toISOString(),
@@ -281,6 +286,25 @@ export async function attachStripePaymentToLead({
       currency ?? null,
       status ?? null,
     ],
+  );
+}
+
+export async function setLeadCustomerId({
+  leadId,
+  customerId,
+}: {
+  leadId: string;
+  customerId: string;
+}) {
+  if (!canUseDatabase()) {
+    return;
+  }
+
+  const pool = getPool();
+
+  await pool.query(
+    `update platinum_leads set customer_id = $2::uuid, updated_at = now() where id = $1::uuid`,
+    [leadId, customerId],
   );
 }
 

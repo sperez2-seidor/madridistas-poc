@@ -3,10 +3,15 @@ import Stripe from "stripe";
 import {
   normalizeLeadInput,
   savePlatinumLead,
+  setLeadCustomerId,
   type BillingCycle,
   type JerseyTier,
   type PlatinumLeadInput,
 } from "@/lib/platinum-leads";
+import {
+  attachStripeCustomerId,
+  upsertLocalCustomer,
+} from "@/lib/platinum-customers";
 import { getPricing } from "@/lib/platinum-pricing";
 
 const stripe =
@@ -45,14 +50,50 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as PlatinumLeadInput;
     const normalized = normalizeLeadInput(payload);
-    const lead = await savePlatinumLead(payload, "checkout_started");
     const pricing = getPricing(normalized.billingCycle, normalized.jerseyTier);
     const fallbackLink = getFallbackPaymentLink(
       normalized.billingCycle,
       normalized.jerseyTier,
     );
 
+    const customer = await upsertLocalCustomer({
+      email: normalized.email,
+      firstName: normalized.firstName,
+      lastName: normalized.lastName,
+      billingCycle: normalized.billingCycle,
+      jerseyTier: normalized.jerseyTier,
+      amountCents: pricing?.amountCents,
+      currency: pricing?.currency,
+    });
+
+    const lead = await savePlatinumLead(
+      payload,
+      "checkout_started",
+      undefined,
+      customer?.id,
+    );
+
     if (stripe && pricing) {
+      let stripeCustomerId = customer?.stripeCustomerId ?? null;
+
+      if (!stripeCustomerId) {
+        const stripeCustomer = await stripe.customers.create({
+          email: normalized.email,
+          name: `${normalized.firstName} ${normalized.lastName}`.trim(),
+          metadata: {
+            local_customer_id: customer?.id ?? "",
+            source: "madridista-platinum-poc",
+          },
+        });
+        stripeCustomerId = stripeCustomer.id;
+        if (customer?.id) {
+          await attachStripeCustomerId({
+            id: customer.id,
+            stripeCustomerId,
+          });
+        }
+      }
+
       const origin =
         request.headers.get("origin") ||
         process.env.NEXT_PUBLIC_SITE_URL ||
@@ -60,7 +101,7 @@ export async function POST(request: Request) {
 
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
-        customer_email: normalized.email,
+        customer: stripeCustomerId,
         client_reference_id: lead.id,
         line_items: [
           {
@@ -78,14 +119,19 @@ export async function POST(request: Request) {
           setup_future_usage: "off_session",
           metadata: {
             lead_id: lead.id,
+            customer_id: customer?.id ?? "",
             billing_cycle: normalized.billingCycle,
             jersey_tier: normalized.jerseyTier,
             kind: "initial",
             source: "madridista-platinum-poc",
           },
         },
+        saved_payment_method_options: {
+          payment_method_save: "enabled",
+        },
         metadata: {
           lead_id: lead.id,
+          customer_id: customer?.id ?? "",
           billing_cycle: normalized.billingCycle,
           jersey_tier: normalized.jerseyTier,
           payment_method_preference: normalized.paymentMethod,
@@ -105,7 +151,12 @@ export async function POST(request: Request) {
         { ...payload, id: lead.id },
         "checkout_started",
         session.id,
+        customer?.id,
       );
+
+      if (customer?.id) {
+        await setLeadCustomerId({ leadId: lead.id, customerId: customer.id });
+      }
 
       return NextResponse.json({ id: lead.id, url: session.url });
     }

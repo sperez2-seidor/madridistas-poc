@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 type ChargeButtonProps = {
-  leadId: string;
+  customerId: string;
   amountLabel: string;
 };
 
@@ -12,7 +12,10 @@ type ChargeResult =
   | { ok: true; paymentIntentId: string; status: string }
   | { ok: false; error: string; code?: string; paymentIntentId?: string | null };
 
-export default function ChargeButton({ leadId, amountLabel }: ChargeButtonProps) {
+export default function ChargeButton({
+  customerId,
+  amountLabel,
+}: ChargeButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
@@ -27,7 +30,7 @@ export default function ChargeButton({ leadId, amountLabel }: ChargeButtonProps)
       const response = await fetch("/api/backoffice/charge", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ leadId }),
+        body: JSON.stringify({ customerId }),
       });
       const data = (await response.json()) as ChargeResult;
       setResult(data);

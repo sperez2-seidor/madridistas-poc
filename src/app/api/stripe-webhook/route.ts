@@ -5,6 +5,10 @@ import {
   updateLeadCheckoutStatus,
 } from "@/lib/platinum-leads";
 import { upsertChargeByPaymentIntent } from "@/lib/platinum-charges";
+import {
+  attachPaymentMethodToCustomer,
+  getCustomerByStripeId,
+} from "@/lib/platinum-customers";
 
 const stripe =
   process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY.startsWith("sk_")
@@ -31,39 +35,98 @@ async function retrievePaymentIntent(paymentIntentId: string) {
   });
 }
 
+async function retrieveSetupIntent(setupIntentId: string) {
+  if (!stripe) {
+    throw new Error("Stripe no está configurado.");
+  }
+
+  return stripe.setupIntents.retrieve(setupIntentId, {
+    expand: ["payment_method"],
+  });
+}
+
+async function syncSetupSession(session: Stripe.Checkout.Session) {
+  const setupIntentId = toId(session.setup_intent);
+  if (!setupIntentId) return;
+
+  const setupIntent = await retrieveSetupIntent(setupIntentId);
+  const stripeCustomerId = toId(session.customer) || toId(setupIntent.customer);
+  const paymentMethodId = toId(setupIntent.payment_method);
+
+  if (!stripeCustomerId || !paymentMethodId) return;
+
+  const card =
+    setupIntent.payment_method &&
+    typeof setupIntent.payment_method === "object"
+      ? (setupIntent.payment_method as Stripe.PaymentMethod).card
+      : null;
+
+  await attachPaymentMethodToCustomer({
+    stripeCustomerId,
+    stripePaymentMethodId: paymentMethodId,
+    cardBrand: card?.brand ?? null,
+    cardLast4: card?.last4 ?? null,
+  });
+}
+
 async function syncCheckoutSession(session: Stripe.Checkout.Session) {
   const leadId = session.client_reference_id || session.metadata?.lead_id;
-  if (!leadId) return;
 
   const paymentIntentId = toId(session.payment_intent);
   if (!paymentIntentId) {
-    await updateLeadCheckoutStatus({
-      leadId,
-      stripeCheckoutSessionId: session.id,
-      status: session.payment_status === "paid" ? "paid" : "checkout_started",
-    });
+    if (leadId) {
+      await updateLeadCheckoutStatus({
+        leadId,
+        stripeCheckoutSessionId: session.id,
+        status: session.payment_status === "paid" ? "paid" : "checkout_started",
+      });
+    }
     return;
   }
 
   const paymentIntent = await retrievePaymentIntent(paymentIntentId);
-  const customerId = toId(session.customer) || toId(paymentIntent.customer);
+  const stripeCustomerId = toId(session.customer) || toId(paymentIntent.customer);
   const paymentMethodId = toId(paymentIntent.payment_method);
   const chargeId = toId(paymentIntent.latest_charge);
   const amountCents = paymentIntent.amount_received || paymentIntent.amount;
   const currency = paymentIntent.currency;
 
-  await attachStripePaymentToLead({
-    leadId,
-    stripeCustomerId: customerId,
-    stripePaymentMethodId: paymentMethodId,
-    stripeCheckoutSessionId: session.id,
-    amountCents,
-    currency,
-    status: paymentIntent.status === "succeeded" ? "paid" : "checkout_started",
-  });
+  const card =
+    paymentIntent.payment_method &&
+    typeof paymentIntent.payment_method === "object"
+      ? (paymentIntent.payment_method as Stripe.PaymentMethod).card
+      : null;
+
+  let localCustomerId: string | null = null;
+  if (stripeCustomerId && paymentMethodId) {
+    await attachPaymentMethodToCustomer({
+      stripeCustomerId,
+      stripePaymentMethodId: paymentMethodId,
+      cardBrand: card?.brand ?? null,
+      cardLast4: card?.last4 ?? null,
+      amountCents,
+      currency,
+    });
+
+    const localCustomer = await getCustomerByStripeId(stripeCustomerId);
+    localCustomerId = localCustomer?.id ?? null;
+  }
+
+  if (leadId) {
+    await attachStripePaymentToLead({
+      leadId,
+      stripeCustomerId,
+      stripePaymentMethodId: paymentMethodId,
+      stripeCheckoutSessionId: session.id,
+      amountCents,
+      currency,
+      status: paymentIntent.status === "succeeded" ? "paid" : "checkout_started",
+    });
+  }
 
   await upsertChargeByPaymentIntent({
-    leadId,
+    leadId: leadId ?? null,
+    customerId: localCustomerId,
     stripePaymentIntentId: paymentIntent.id,
     stripeChargeId: chargeId ?? null,
     kind: "initial",
@@ -96,10 +159,19 @@ function mapPaymentIntentStatus(
 
 async function syncPaymentIntent(paymentIntent: Stripe.PaymentIntent) {
   const leadId = paymentIntent.metadata?.lead_id;
+  const customerIdFromMetadata = paymentIntent.metadata?.customer_id;
+  const stripeCustomerId = toId(paymentIntent.customer);
   const chargeId = toId(paymentIntent.latest_charge);
+
+  let localCustomerId = customerIdFromMetadata || null;
+  if (!localCustomerId && stripeCustomerId) {
+    const localCustomer = await getCustomerByStripeId(stripeCustomerId);
+    localCustomerId = localCustomer?.id ?? null;
+  }
 
   await upsertChargeByPaymentIntent({
     leadId: leadId ?? null,
+    customerId: localCustomerId,
     stripePaymentIntentId: paymentIntent.id,
     stripeChargeId: chargeId ?? null,
     amountCents: paymentIntent.amount_received || paymentIntent.amount,
@@ -157,7 +229,12 @@ export async function POST(request: Request) {
   }
 
   if (event.type === "checkout.session.completed") {
-    await syncCheckoutSession(event.data.object as Stripe.Checkout.Session);
+    const session = event.data.object as Stripe.Checkout.Session;
+    if (session.mode === "setup") {
+      await syncSetupSession(session);
+    } else {
+      await syncCheckoutSession(session);
+    }
     return NextResponse.json({ received: true });
   }
 

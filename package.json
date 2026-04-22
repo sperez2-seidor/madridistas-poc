@@ -5,6 +5,7 @@
   "scripts": {
     "db:start": "docker compose up -d db",
     "db:migrate": "node scripts/migrate-db.mjs",
+    "db:reset": "node scripts/reset-db.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
